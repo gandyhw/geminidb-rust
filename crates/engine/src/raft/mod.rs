@@ -219,7 +219,7 @@ impl RaftNode {
     }
 
     pub fn get_log_entry(&self, index: u64) -> Option<LogEntry> {
-        self.log.read().unwrap().get(index as usize).cloned()
+        self.log.read().unwrap().iter().find(|e| e.index == index).cloned()
     }
 
     pub fn last_log_index(&self) -> u64 {
@@ -288,7 +288,7 @@ impl RaftNode {
             if req.last_log_index >= self.last_log_index() && req.last_log_term >= self.last_log_term() {
                 *voted_for = Some(req.candidate_id);
                 return VoteResult {
-                    term: current_term,
+                    term: req.term,
                     vote_granted: true,
                 };
             }
@@ -341,14 +341,16 @@ impl RaftNode {
             }
         }
         
+        let match_index = log.last().map(|e| e.index).unwrap_or(0);
+        
         if req.leader_commit > *self.commit_index.read().unwrap() {
-            *self.commit_index.write().unwrap() = req.leader_commit.min(log.last().map(|e| e.index).unwrap_or(0));
+            *self.commit_index.write().unwrap() = req.leader_commit.min(match_index);
         }
         
         AppendEntriesResult {
             term: current_term,
             success: true,
-            match_index: self.last_log_index(),
+            match_index,
         }
     }
 
