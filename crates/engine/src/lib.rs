@@ -22,6 +22,7 @@ pub mod api;
 pub mod raft;
 pub mod line_protocol;
 pub mod influxql;
+pub mod http;
 
 pub use config::{Config, EngineConfig, WalConfig, MemTableConfig, TsspConfig, CompactionConfig, CompressionType};
 pub use error::{Error, Result};
@@ -41,7 +42,7 @@ pub use snapshot::{SnapshotId, SnapshotManifest, SnapshotFile, SnapshotService};
 pub use scheduler::{Scheduler, ScheduledTask, TaskId, TaskHandler, TaskExecution, TaskPriority};
 
 use std::path::PathBuf;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, RwLock};
 
 pub struct Engine {
     config: EngineConfig,
@@ -53,6 +54,7 @@ pub struct Engine {
     shard_manager: ShardManager,
     shard_mapper: ShardMapper,
     tiered_storage: TieredStorageManager,
+    schema: Arc<RwLock<Schema>>,
 }
 
 struct TsspManager {
@@ -74,6 +76,7 @@ impl Engine {
         let shard_manager = ShardManager::new(config.data_dir.clone());
         let shard_mapper = ShardMapper::new(3600 * 24 * 7, 1);
         let tiered_storage = TieredStorageManager::new(config.data_dir.clone(), TierConfig::default());
+        let schema = Arc::new(RwLock::new(Schema::new()));
 
         let mut engine = Self {
             config,
@@ -85,6 +88,7 @@ impl Engine {
             shard_manager,
             shard_mapper,
             tiered_storage,
+            schema,
         };
         
         engine.replay_wal()?;
@@ -275,6 +279,25 @@ impl Engine {
     pub fn close(&mut self) -> Result<()> {
         self.force_flush()?;
         self.wal.close()?;
+        Ok(())
+    }
+
+    pub fn query(&self, request: QueryRequest) -> Result<Vec<Row>> {
+        let query = Query {
+            database: request.database,
+            table: request.measurement,
+            time_range: request.time_range,
+            columns: vec![],
+            filter: None,
+            limit: request.limit,
+        };
+        let result = self.read(query)?;
+        Ok(result.rows)
+    }
+
+    pub fn create_database(&self, name: &str) -> Result<()> {
+        let mut schema = self.schema.write().unwrap();
+        schema.create_database(name.to_string())?;
         Ok(())
     }
 }
