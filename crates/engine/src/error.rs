@@ -17,6 +17,9 @@ pub enum Error {
     #[error("Index error: {0}")]
     Index(String),
 
+    #[error("Schema error: {0}")]
+    Schema(String),
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 

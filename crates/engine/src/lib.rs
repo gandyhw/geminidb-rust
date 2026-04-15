@@ -9,6 +9,8 @@ pub mod compaction;
 pub mod bloom;
 pub mod block_index;
 pub mod ttl;
+pub mod schema;
+pub mod shard;
 
 pub use config::{Config, EngineConfig, WalConfig, MemTableConfig, TsspConfig, CompactionConfig, CompressionType};
 pub use error::{Error, Result};
@@ -17,6 +19,8 @@ pub use memtable::MemTable;
 pub use tssp::{TsspReader, TsspWriter, FileMeta, TableSchema, ColumnData};
 pub use index::SeriesIndex;
 pub use compaction::CompactionManager;
+pub use schema::{Schema, Database, Measurement, Field, Tag, FieldType, RetentionPolicy};
+pub use shard::{ShardInfo, ShardManager, ShardMapper, ShardStatus};
 
 use std::path::PathBuf;
 use std::sync::Mutex;
