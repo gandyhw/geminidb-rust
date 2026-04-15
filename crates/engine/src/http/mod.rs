@@ -328,7 +328,24 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
             }
         }
         crate::influxql::Statement::ShowMeasurements => {
-            format_http_response(200, "OK", "{\"results\":[{\"series\":[{\"name\":\"measurements\",\"values\":[]}]}]}")
+            let guard = engine.read().unwrap();
+            let engine_guard = match guard.as_ref() {
+                Some(e) => e,
+                None => return format_http_response(500, "Internal Server Error", "Engine not initialized"),
+            };
+            let measurements: Vec<Vec<String>> = engine_guard.measurements()
+                .iter()
+                .map(|name| vec![name.clone()])
+                .collect();
+            if measurements.is_empty() {
+                format_http_response(200, "OK", "{\"results\":[{\"series\":[{\"name\":\"measurements\",\"values\":[]}]}]}")
+            } else {
+                let values_json: String = measurements.iter()
+                    .map(|row| format!("[{}]", row.iter().map(|s| format!("\"{}\"", s)).collect::<Vec<_>>().join(",")))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format_http_response(200, "OK", &format!("{{\"results\":[{{\"series\":[{{\"name\":\"measurements\",\"values\":[{}]}}]}}]}}", values_json))
+            }
         }
         crate::influxql::Statement::ShowTagKeys => {
             format_http_response(200, "OK", "{\"results\":[{\"series\":[{\"name\":\"tagKeys\",\"values\":[]}]}]}")

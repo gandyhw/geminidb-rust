@@ -55,6 +55,7 @@ pub struct Engine {
     shard_mapper: ShardMapper,
     tiered_storage: TieredStorageManager,
     schema: Arc<RwLock<Schema>>,
+    measurements: std::collections::HashSet<String>,
 }
 
 struct TsspManager {
@@ -89,6 +90,7 @@ impl Engine {
             shard_mapper,
             tiered_storage,
             schema,
+            measurements: std::collections::HashSet::new(),
         };
         
         engine.replay_wal()?;
@@ -102,7 +104,7 @@ impl Engine {
         
         self.wal.replay(|batch| {
             for row in &batch.rows {
-                let series_key = Self::encode_series_key(&row.tags);
+                let series_key = Self::encode_series_key(&batch.table, &row.tags);
                 let series_id = Self::compute_series_id(&series_key);
                 if !series_index.contains(series_id) {
                     series_index.add(series_id);
@@ -121,19 +123,21 @@ impl Engine {
         hasher.finish()
     }
     
-    fn encode_series_key(tags: &std::collections::HashMap<String, String>) -> Vec<u8> {
+    fn encode_series_key(measurement: &str, tags: &std::collections::HashMap<String, String>) -> Vec<u8> {
         let mut keys: Vec<_> = tags.iter().collect();
         keys.sort();
-        keys.iter()
+        let tag_str = keys.iter()
             .map(|(k, v)| format!("{}={}", k, v))
             .collect::<Vec<_>>()
-            .join(",")
-            .into_bytes()
+            .join(",");
+        format!("{}_{}", measurement, tag_str).into_bytes()
     }
 
     pub fn write(&mut self, batch: WriteBatch) -> Result<()> {
+        self.measurements.insert(batch.table.clone());
+        
         for row in &batch.rows {
-            let series_key = Self::encode_series_key(&row.tags);
+            let series_key = Self::encode_series_key(&batch.table, &row.tags);
             let series_id = Self::compute_series_id(&series_key);
             if !self.series_index.contains(series_id) {
                 self.series_index.add(series_id);
@@ -284,6 +288,10 @@ impl Engine {
 
     pub fn schema(&self) -> &Arc<RwLock<Schema>> {
         &self.schema
+    }
+
+    pub fn measurements(&self) -> Vec<String> {
+        self.measurements.iter().cloned().collect()
     }
 
     pub fn query(&self, request: QueryRequest) -> Result<Vec<Row>> {
