@@ -2,6 +2,43 @@ use openGemini_engine::config::{TsspConfig, CompressionType};
 use openGemini_engine::tssp::{TsspWriter, TsspReader, FileMeta, TableSchema, ColumnData};
 use tempfile::TempDir;
 
+#[test]
+fn test_tssp_bloom_filter() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = TsspConfig {
+        data_dir: temp_dir.path().to_path_buf(),
+        max_file_size: 256 * 1024 * 1024,
+        compression: CompressionType::None,
+    };
+    
+    let mut writer = TsspWriter::new(config.clone()).unwrap();
+    
+    let schema = TableSchema {
+        table_id: 1,
+        columns: vec![
+            ("time".to_string(), 0),
+            ("value".to_string(), 1),
+        ].into_iter().collect(),
+    };
+    
+    writer.add_series_key(b"host=server1");
+    writer.add_series_key(b"host=server2");
+    
+    let time_values: Vec<u8> = vec![1000i64, 2000].iter().flat_map(|v| v.to_le_bytes()).collect();
+    
+    writer.write_batch(&schema, 1000, 2000, vec![
+        ColumnData { column_id: 0, values: time_values, null_count: 0 },
+    ]).unwrap();
+    
+    let meta = writer.close().unwrap();
+    assert!(meta.bloom_filter_data.is_some());
+    
+    let reader = TsspReader::new(config).unwrap();
+    assert!(reader.may_contain_series(&meta, b"host=server1"));
+    assert!(reader.may_contain_series(&meta, b"host=server2"));
+    assert!(!reader.may_contain_series(&meta, b"host=server3"));
+}
+
 fn create_test_config(temp_dir: &TempDir) -> TsspConfig {
     TsspConfig {
         data_dir: temp_dir.path().to_path_buf(),
@@ -140,6 +177,7 @@ fn test_tssp_file_meta() {
         min_time: 1000,
         max_time: 5000,
         size: 1024,
+        bloom_filter_data: None,
     };
 
     assert_eq!(meta.file_id, 1);

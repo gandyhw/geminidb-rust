@@ -6,6 +6,7 @@ pub mod memtable;
 pub mod tssp;
 pub mod index;
 pub mod compaction;
+pub mod bloom;
 
 pub use config::{Config, EngineConfig, WalConfig, MemTableConfig, TsspConfig, CompactionConfig, CompressionType};
 pub use error::{Error, Result};
@@ -220,6 +221,7 @@ impl TsspManager {
                 min_time: 0,
                 max_time: 0,
                 size: 0,
+                bloom_filter_data: None,
             });
         }
 

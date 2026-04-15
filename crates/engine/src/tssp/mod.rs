@@ -1,3 +1,4 @@
+use crate::bloom::BloomFilter;
 use crate::config::{TsspConfig, CompressionType};
 use crate::error::{Error, Result};
 use std::collections::HashMap;
@@ -30,6 +31,7 @@ pub struct TsspWriter {
     max_time: i64,
     bytes_written: u64,
     schema: Option<TableSchema>,
+    bloom_filter: BloomFilter,
 }
 
 pub struct TsspReader {
@@ -42,6 +44,7 @@ pub struct FileMeta {
     pub min_time: i64,
     pub max_time: i64,
     pub size: u64,
+    pub bloom_filter_data: Option<Vec<u64>>,
 }
 
 impl TsspWriter {
@@ -65,7 +68,12 @@ impl TsspWriter {
             max_time: i64::MIN,
             bytes_written: 0,
             schema: None,
+            bloom_filter: BloomFilter::with_capacity(1000),
         })
+    }
+
+    pub fn add_series_key(&mut self, series_key: &[u8]) {
+        self.bloom_filter.insert(series_key);
     }
 
     pub fn write_batch(&mut self, schema: &TableSchema, min_time: i64, max_time: i64, columns: Vec<ColumnData>) -> Result<FileMeta> {
@@ -105,6 +113,7 @@ impl TsspWriter {
             min_time: self.min_time,
             max_time: self.max_time,
             size: self.bytes_written,
+            bloom_filter_data: None,
         })
     }
 
@@ -155,6 +164,7 @@ impl TsspWriter {
                 min_time: self.min_time,
                 max_time: self.max_time,
                 size,
+                bloom_filter_data: Some(self.bloom_filter.get_bit_array().clone()),
             });
         }
 
@@ -163,6 +173,7 @@ impl TsspWriter {
             min_time: self.min_time,
             max_time: self.max_time,
             size: self.bytes_written,
+            bloom_filter_data: Some(self.bloom_filter.get_bit_array().clone()),
         })
     }
 }
@@ -170,6 +181,16 @@ impl TsspWriter {
 impl TsspReader {
     pub fn new(config: TsspConfig) -> Result<Self> {
         Ok(Self { config })
+    }
+
+    pub fn may_contain_series(&self, file_meta: &FileMeta, series_key: &[u8]) -> bool {
+        if let Some(ref filter_data) = file_meta.bloom_filter_data {
+            let mut filter = BloomFilter::with_capacity(1000);
+            filter.set_bit_array(filter_data.clone());
+            filter.contains(series_key)
+        } else {
+            true
+        }
     }
 
     pub fn read(&self, file_meta: &FileMeta) -> Result<Vec<u8>> {
