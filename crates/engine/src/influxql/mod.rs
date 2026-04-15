@@ -5,9 +5,11 @@ use std::collections::HashMap;
 pub enum Statement {
     Select(SelectStatement),
     CreateDatabase(String),
+    DropDatabase(String),
     ShowDatabases,
     ShowMeasurements,
     ShowTagKeys(Option<String>),
+    ShowFieldKeys(Option<String>),
     Use { database: String },
     Insert { measurement: String, tags: HashMap<String, String>, fields: HashMap<String, f64>, timestamp: Option<i64> },
 }
@@ -233,6 +235,17 @@ impl Parser {
                     None
                 }
             }
+            "DROP" => {
+                self.skip_whitespace();
+                let next = self.parse_word();
+                if next == "DATABASE" {
+                    self.skip_whitespace();
+                    let name = self.parse_identifier()?;
+                    Some(Statement::DropDatabase(name))
+                } else {
+                    None
+                }
+            }
             "SHOW" => {
                 self.skip_whitespace();
                 let next = self.parse_word();
@@ -245,6 +258,16 @@ impl Parser {
                         if next == "KEYS" {
                             let measurement = self.parse_show_tag_keys_measurement();
                             Some(Statement::ShowTagKeys(measurement))
+                        } else {
+                            None
+                        }
+                    }
+                    "FIELD" => {
+                        self.skip_whitespace();
+                        let next = self.parse_word();
+                        if next == "KEYS" {
+                            let measurement = self.parse_show_tag_keys_measurement();
+                            Some(Statement::ShowFieldKeys(measurement))
                         } else {
                             None
                         }
@@ -376,6 +399,19 @@ mod tests {
                 assert_eq!(name, "testdb");
             }
             _ => panic!("expected CreateDatabase"),
+        }
+    }
+
+    #[test]
+    fn test_parse_drop_database() {
+        let mut parser = Parser::new("DROP DATABASE testdb");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::DropDatabase(name) => {
+                assert_eq!(name, "testdb");
+            }
+            _ => panic!("expected DropDatabase"),
         }
     }
 

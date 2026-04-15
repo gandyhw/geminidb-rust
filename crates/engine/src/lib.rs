@@ -57,6 +57,7 @@ pub struct Engine {
     schema: Arc<RwLock<Schema>>,
     measurements: std::collections::HashSet<String>,
     measurement_tag_keys: std::collections::HashMap<String, std::collections::HashSet<String>>,
+    measurement_field_keys: std::collections::HashMap<String, std::collections::HashSet<String>>,
 }
 
 struct TsspManager {
@@ -93,6 +94,7 @@ impl Engine {
             schema,
             measurements: std::collections::HashSet::new(),
             measurement_tag_keys: std::collections::HashMap::new(),
+            measurement_field_keys: std::collections::HashMap::new(),
         };
         
         engine.replay_wal()?;
@@ -142,9 +144,17 @@ impl Engine {
             .entry(batch.table.clone())
             .or_insert_with(std::collections::HashSet::new);
         
+        let field_keys = self.measurement_field_keys
+            .entry(batch.table.clone())
+            .or_insert_with(std::collections::HashSet::new);
+        
         for row in &batch.rows {
             for key in row.tags.keys() {
                 tag_keys.insert(key.clone());
+            }
+            
+            for key in row.fields.keys() {
+                field_keys.insert(key.clone());
             }
             
             let series_key = Self::encode_series_key(&batch.table, &row.tags);
@@ -311,6 +321,13 @@ impl Engine {
             .unwrap_or_default()
     }
 
+    pub fn get_field_keys(&self, measurement: &str) -> Vec<String> {
+        self.measurement_field_keys
+            .get(measurement)
+            .map(|keys| keys.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
     pub fn query(&self, request: QueryRequest) -> Result<Vec<Row>> {
         let query = Query {
             database: request.database,
@@ -327,6 +344,15 @@ impl Engine {
     pub fn create_database(&self, name: &str) -> Result<()> {
         let mut schema = self.schema.write().unwrap();
         schema.create_database(name.to_string())?;
+        Ok(())
+    }
+
+    pub fn drop_database(&self, name: &str) -> Result<()> {
+        let mut schema = self.schema.write().unwrap();
+        if !schema.databases.contains_key(name) {
+            return Err(crate::Error::Schema(format!("database {} not found", name)));
+        }
+        schema.databases.remove(name);
         Ok(())
     }
 }

@@ -307,6 +307,17 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
             }
             format_http_response(200, "OK", "{\"results\":[{\"success\":true}]}")
         }
+        crate::influxql::Statement::DropDatabase(name) => {
+            let mut guard = engine.write().unwrap();
+            let engine_guard = match guard.as_mut() {
+                Some(e) => e,
+                None => return format_http_response(500, "Internal Server Error", "Engine not initialized"),
+            };
+            if let Err(e) = engine_guard.drop_database(&name) {
+                return format_http_response(500, "Internal Server Error", &e.to_string());
+            }
+            format_http_response(200, "OK", "{\"results\":[{\"success\":true}]}")
+        }
         crate::influxql::Statement::ShowDatabases => {
             let guard = engine.read().unwrap();
             let engine_guard = match guard.as_ref() {
@@ -379,6 +390,42 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
                     .join(",");
                 format_http_response(200, "OK", &format!("{{\"results\":[{{\"series\":[{{\"name\":\"tagKeys\",\"values\":[{}]}}]}}]}}", values_json))
             }
+        }
+        crate::influxql::Statement::ShowFieldKeys(measurement) => {
+            let guard = engine.read().unwrap();
+            let engine_guard = match guard.as_ref() {
+                Some(e) => e,
+                None => return format_http_response(500, "Internal Server Error", "Engine not initialized"),
+            };
+            
+            let field_keys = if let Some(ref meas) = measurement {
+                engine_guard.get_field_keys(meas)
+            } else {
+                let mut all_keys = std::collections::HashSet::new();
+                for meas in engine_guard.measurements() {
+                    for key in engine_guard.get_field_keys(&meas) {
+                        all_keys.insert(key);
+                    }
+                }
+                all_keys.into_iter().collect()
+            };
+            
+            let field_values: Vec<Vec<String>> = field_keys.iter()
+                .map(|k| vec![k.clone()])
+                .collect();
+            
+            if field_values.is_empty() {
+                format_http_response(200, "OK", "{\"results\":[{\"series\":[{\"name\":\"fieldKeys\",\"values\":[]}]}]}")
+            } else {
+                let values_json: String = field_values.iter()
+                    .map(|row| format!("[{}]", row.iter().map(|s| format!("\"{}\"", s)).collect::<Vec<_>>().join(",")))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format_http_response(200, "OK", &format!("{{\"results\":[{{\"series\":[{{\"name\":\"fieldKeys\",\"values\":[{}]}}]}}]}}", values_json))
+            }
+        }
+        crate::influxql::Statement::Use { database } => {
+            format_http_response(200, "OK", &format!("{{\"results\":[{{\"success\":true,\"database\":\"{}\"}}]}}", database))
         }
         _ => format_http_response(501, "Not Implemented", "Query type not implemented"),
     }
