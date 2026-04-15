@@ -6,10 +6,14 @@ pub enum Statement {
     Select(SelectStatement),
     CreateDatabase(String),
     DropDatabase(String),
+    DropMeasurement(String),
+    DropSeries(Option<String>),
+    Delete,
     ShowDatabases,
     ShowMeasurements,
     ShowTagKeys(Option<String>),
     ShowFieldKeys(Option<String>),
+    ShowSeries,
     Use { database: String },
     Insert { measurement: String, tags: HashMap<String, String>, fields: HashMap<String, f64>, timestamp: Option<i64> },
 }
@@ -238,13 +242,25 @@ impl Parser {
             "DROP" => {
                 self.skip_whitespace();
                 let next = self.parse_word();
-                if next == "DATABASE" {
-                    self.skip_whitespace();
-                    let name = self.parse_identifier()?;
-                    Some(Statement::DropDatabase(name))
-                } else {
-                    None
+                match next.as_str() {
+                    "DATABASE" => {
+                        self.skip_whitespace();
+                        let name = self.parse_identifier()?;
+                        Some(Statement::DropDatabase(name))
+                    }
+                    "MEASUREMENT" => {
+                        self.skip_whitespace();
+                        let name = self.parse_identifier()?;
+                        Some(Statement::DropMeasurement(name))
+                    }
+                    "SERIES" => {
+                        Some(Statement::DropSeries(None))
+                    }
+                    _ => None,
                 }
+            }
+            "DELETE" => {
+                Some(Statement::Delete)
             }
             "SHOW" => {
                 self.skip_whitespace();
@@ -252,6 +268,7 @@ impl Parser {
                 match next.as_str() {
                     "DATABASES" => Some(Statement::ShowDatabases),
                     "MEASUREMENTS" => Some(Statement::ShowMeasurements),
+                    "SERIES" => Some(Statement::ShowSeries),
                     "TAG" => {
                         self.skip_whitespace();
                         let next = self.parse_word();

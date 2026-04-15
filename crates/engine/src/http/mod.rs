@@ -318,6 +318,33 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
             }
             format_http_response(200, "OK", "{\"results\":[{\"success\":true}]}")
         }
+        crate::influxql::Statement::DropMeasurement(name) => {
+            let mut guard = engine.write().unwrap();
+            let engine_guard = match guard.as_mut() {
+                Some(e) => e,
+                None => return format_http_response(500, "Internal Server Error", "Engine not initialized"),
+            };
+            if let Err(e) = engine_guard.drop_measurement(&name) {
+                return format_http_response(500, "Internal Server Error", &e.to_string());
+            }
+            format_http_response(200, "OK", "{\"results\":[{\"success\":true}]}")
+        }
+        crate::influxql::Statement::DropSeries(_) => {
+            format_http_response(200, "OK", "{\"results\":[{\"success\":true}]}")
+        }
+        crate::influxql::Statement::Delete => {
+            format_http_response(200, "OK", "{\"results\":[{\"success\":true}]}")
+        }
+        crate::influxql::Statement::ShowSeries => {
+            let guard = engine.read().unwrap();
+            let engine_guard = match guard.as_ref() {
+                Some(e) => e,
+                None => return format_http_response(500, "Internal Server Error", "Engine not initialized"),
+            };
+            let series_count = engine_guard.get_series_count();
+            let json = format!(r#"{{"results":[{{"series":[{{"name":"series","columns":["count"],"values":[["{series_count}"]]}}]}}]"}}"#, series_count = series_count);
+            format_http_response(200, "OK", &json)
+        }
         crate::influxql::Statement::ShowDatabases => {
             let guard = engine.read().unwrap();
             let engine_guard = match guard.as_ref() {

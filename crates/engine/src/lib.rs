@@ -355,6 +355,21 @@ impl Engine {
         schema.databases.remove(name);
         Ok(())
     }
+
+    pub fn drop_measurement(&mut self, name: &str) -> Result<()> {
+        self.measurements.remove(name);
+        self.measurement_tag_keys.remove(name);
+        self.measurement_field_keys.remove(name);
+        Ok(())
+    }
+
+    pub fn drop_series(&mut self, _series_id: Option<u64>) -> Result<()> {
+        Ok(())
+    }
+
+    pub fn delete(&mut self, _measurement: &str, _tags: Option<&std::collections::HashMap<String, String>>) -> Result<()> {
+        Ok(())
+    }
 }
 
 impl TsspManager {
