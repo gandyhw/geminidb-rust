@@ -20,6 +20,7 @@ pub mod snapshot;
 pub mod scheduler;
 pub mod api;
 pub mod raft;
+pub mod line_protocol;
 
 pub use config::{Config, EngineConfig, WalConfig, MemTableConfig, TsspConfig, CompactionConfig, CompressionType};
 pub use error::{Error, Result};
