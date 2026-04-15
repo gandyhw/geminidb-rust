@@ -13,6 +13,8 @@ serde_json.workspace = true
 roaring.workspace = true
 lz4.workspace = true
 zstd.workspace = true
+snap.workspace = true
+lz4_flex.workspace = true
 
 crc32fast.workspace = true
 byteorder.workspace = true

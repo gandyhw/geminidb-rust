@@ -1,4 +1,3 @@
-use crate::config::MemTableConfig;
 use crate::error::Result;
 use crate::{FieldValue, Row, WriteBatch};
 use std::collections::BTreeMap;

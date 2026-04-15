@@ -129,3 +129,48 @@ fn test_wal_purge() {
     let result = wal.purge(1);
     assert!(result.is_ok());
 }
+
+#[test]
+fn test_wal_replay() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = WalConfig {
+        dir: temp_dir.path().to_path_buf(),
+        file_size: 1024 * 1024,
+        sync_enabled: false,
+    };
+
+    let wal = Wal::new(&config).unwrap();
+    
+    for i in 0..5 {
+        let batch = create_test_batch_with_id(i);
+        wal.write(&batch).unwrap();
+    }
+
+    let mut replayed_batches = Vec::new();
+    
+    wal.replay(|batch| {
+        replayed_batches.push(batch);
+        Ok(())
+    }).unwrap();
+    
+    assert_eq!(replayed_batches.len(), 5);
+}
+
+fn create_test_batch_with_id(id: i64) -> WriteBatch {
+    let mut tags = HashMap::new();
+    tags.insert("host".to_string(), format!("server{}", id));
+
+    let mut fields = HashMap::new();
+    fields.insert("cpu".to_string(), FieldValue::Float(id as f64));
+
+    WriteBatch {
+        database: "test_db".to_string(),
+        table: "cpu_metrics".to_string(),
+        rows: vec![Row {
+            tags,
+            fields,
+            timestamp: id * 1000,
+        }],
+        timestamp: id * 1000,
+    }
+}

@@ -142,4 +142,92 @@ impl Wal {
         }
         Ok(())
     }
+
+    pub fn replay<F>(&self, mut callback: F) -> Result<()>
+    where
+        F: FnMut(WriteBatch) -> Result<()>,
+    {
+        let entries = fs::read_dir(&self.dir)?;
+        let mut wal_files: Vec<u64> = Vec::new();
+        
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map(|e| e == "wal").unwrap_or(false) {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    if let Ok(id) = u64::from_str_radix(stem, 16) {
+                        wal_files.push(id);
+                    }
+                }
+            }
+        }
+        
+        wal_files.sort();
+        
+        for file_id in wal_files {
+            self.replay_file(file_id, &mut callback)?;
+        }
+        
+        Ok(())
+    }
+    
+    fn replay_file<F>(&self, file_id: u64, callback: &mut F) -> Result<()>
+    where
+        F: FnMut(WriteBatch) -> Result<()>,
+    {
+        let path = self.dir.join(format!("{:016x}.wal", file_id));
+        if !path.exists() {
+            return Ok(());
+        }
+        
+        let mut file = File::open(&path)?;
+        let file_size = file.metadata()?.len();
+        let mut offset = 0u64;
+        
+        while offset < file_size {
+            let len = {
+                let mut len_bytes = [0u8; 4];
+                file.read_exact(&mut len_bytes)?;
+                offset += 4;
+                u32::from_be_bytes(len_bytes) as u64
+            };
+            
+            if len == 0 {
+                break;
+            }
+            
+            let mut data = vec![0u8; len as usize];
+            file.read_exact(&mut data)?;
+            offset += len;
+            
+            match bincode::deserialize::<WriteBatch>(&data) {
+                Ok(batch) => {
+                    callback(batch)?;
+                }
+                Err(e) => {
+                    eprintln!("WAL replay: failed to deserialize batch: {}", e);
+                }
+            }
+        }
+        
+        Ok(())
+    }
+
+    pub fn get_wal_files(&self) -> Result<Vec<u64>> {
+        let entries = fs::read_dir(&self.dir)?;
+        let mut wal_files: Vec<u64> = Vec::new();
+        
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().map(|e| e == "wal").unwrap_or(false) {
+                if let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
+                    if let Ok(id) = u64::from_str_radix(stem, 16) {
+                        wal_files.push(id);
+                    }
+                }
+            }
+        }
+        
+        wal_files.sort();
+        Ok(wal_files)
+    }
 }
