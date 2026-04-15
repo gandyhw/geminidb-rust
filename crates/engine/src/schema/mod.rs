@@ -161,14 +161,10 @@ impl Schema {
         self.databases.get_mut(name)
     }
 
-    pub fn create_measurement(&mut self, db_name: &str, rp_name: &str, measurement: Measurement) -> Result<()> {
-        let db = self.databases.get_mut(db_name)
+    pub fn create_measurement(&mut self, db_name: &str, _rp_name: &str, _measurement: Measurement) -> Result<()> {
+        let _db = self.databases.get_mut(db_name)
             .ok_or_else(|| Error::Schema(format!("database {} not found", db_name)))?;
         
-        let rp = db.retention_policies.get_mut(rp_name)
-            .ok_or_else(|| Error::Schema(format!("retention policy {} not found", rp_name)))?;
-        
-        drop(rp);
         Ok(())
     }
 

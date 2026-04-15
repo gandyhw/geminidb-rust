@@ -1,4 +1,3 @@
-use crate::config::{EngineConfig, WalConfig, MemTableConfig, TsspConfig};
 use crate::error::{Error, Result};
 use std::collections::HashMap;
 use std::path::PathBuf;
