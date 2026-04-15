@@ -308,7 +308,24 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
             format_http_response(200, "OK", "{\"results\":[{\"success\":true}]}")
         }
         crate::influxql::Statement::ShowDatabases => {
-            format_http_response(200, "OK", "{\"results\":[{\"series\":[{\"name\":\"databases\",\"values\":[[\"testdb\"]]}]}]}")
+            let guard = engine.read().unwrap();
+            let engine_guard = match guard.as_ref() {
+                Some(e) => e,
+                None => return format_http_response(500, "Internal Server Error", "Engine not initialized"),
+            };
+            let schema = engine_guard.schema().read().unwrap();
+            let databases: Vec<Vec<String>> = schema.databases.keys()
+                .map(|name| vec![name.clone()])
+                .collect();
+            if databases.is_empty() {
+                format_http_response(200, "OK", "{\"results\":[{\"series\":[{\"name\":\"databases\",\"values\":[]}]}]}")
+            } else {
+                let values_json: String = databases.iter()
+                    .map(|row| format!("[{}]", row.iter().map(|s| format!("\"{}\"", s)).collect::<Vec<_>>().join(",")))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format_http_response(200, "OK", &format!("{{\"results\":[{{\"series\":[{{\"name\":\"databases\",\"values\":[{}]}}]}}]}}", values_json))
+            }
         }
         crate::influxql::Statement::ShowMeasurements => {
             format_http_response(200, "OK", "{\"results\":[{\"series\":[{\"name\":\"measurements\",\"values\":[]}]}]}")

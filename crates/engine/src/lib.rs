@@ -282,6 +282,10 @@ impl Engine {
         Ok(())
     }
 
+    pub fn schema(&self) -> &Arc<RwLock<Schema>> {
+        &self.schema
+    }
+
     pub fn query(&self, request: QueryRequest) -> Result<Vec<Row>> {
         let query = Query {
             database: request.database,
