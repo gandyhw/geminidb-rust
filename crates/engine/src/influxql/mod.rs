@@ -7,7 +7,7 @@ pub enum Statement {
     CreateDatabase(String),
     ShowDatabases,
     ShowMeasurements,
-    ShowTagKeys,
+    ShowTagKeys(Option<String>),
     Use { database: String },
     Insert { measurement: String, tags: HashMap<String, String>, fields: HashMap<String, f64>, timestamp: Option<i64> },
 }
@@ -139,6 +139,20 @@ impl Parser {
         }
     }
 
+    fn parse_show_tag_keys_measurement(&mut self) -> Option<String> {
+        self.skip_whitespace();
+        if self.peek() == Some('F') || self.peek() == Some('f') {
+            let start = self.pos;
+            let word = self.parse_word();
+            if word.to_uppercase() == "FROM" {
+                self.skip_whitespace();
+                return self.parse_identifier();
+            }
+            self.pos = start;
+        }
+        None
+    }
+
     pub fn parse_statement(&mut self) -> Option<Statement> {
         self.skip_whitespace();
         
@@ -229,7 +243,8 @@ impl Parser {
                         self.skip_whitespace();
                         let next = self.parse_word();
                         if next == "KEYS" {
-                            Some(Statement::ShowTagKeys)
+                            let measurement = self.parse_show_tag_keys_measurement();
+                            Some(Statement::ShowTagKeys(measurement))
                         } else {
                             None
                         }

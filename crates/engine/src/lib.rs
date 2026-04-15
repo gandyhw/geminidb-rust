@@ -56,6 +56,7 @@ pub struct Engine {
     tiered_storage: TieredStorageManager,
     schema: Arc<RwLock<Schema>>,
     measurements: std::collections::HashSet<String>,
+    measurement_tag_keys: std::collections::HashMap<String, std::collections::HashSet<String>>,
 }
 
 struct TsspManager {
@@ -91,6 +92,7 @@ impl Engine {
             tiered_storage,
             schema,
             measurements: std::collections::HashSet::new(),
+            measurement_tag_keys: std::collections::HashMap::new(),
         };
         
         engine.replay_wal()?;
@@ -136,7 +138,15 @@ impl Engine {
     pub fn write(&mut self, batch: WriteBatch) -> Result<()> {
         self.measurements.insert(batch.table.clone());
         
+        let tag_keys = self.measurement_tag_keys
+            .entry(batch.table.clone())
+            .or_insert_with(std::collections::HashSet::new);
+        
         for row in &batch.rows {
+            for key in row.tags.keys() {
+                tag_keys.insert(key.clone());
+            }
+            
             let series_key = Self::encode_series_key(&batch.table, &row.tags);
             let series_id = Self::compute_series_id(&series_key);
             if !self.series_index.contains(series_id) {
@@ -292,6 +302,13 @@ impl Engine {
 
     pub fn measurements(&self) -> Vec<String> {
         self.measurements.iter().cloned().collect()
+    }
+
+    pub fn get_tag_keys(&self, measurement: &str) -> Vec<String> {
+        self.measurement_tag_keys
+            .get(measurement)
+            .map(|keys| keys.iter().cloned().collect())
+            .unwrap_or_default()
     }
 
     pub fn query(&self, request: QueryRequest) -> Result<Vec<Row>> {

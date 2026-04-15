@@ -347,8 +347,38 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
                 format_http_response(200, "OK", &format!("{{\"results\":[{{\"series\":[{{\"name\":\"measurements\",\"values\":[{}]}}]}}]}}", values_json))
             }
         }
-        crate::influxql::Statement::ShowTagKeys => {
-            format_http_response(200, "OK", "{\"results\":[{\"series\":[{\"name\":\"tagKeys\",\"values\":[]}]}]}")
+        crate::influxql::Statement::ShowTagKeys(measurement) => {
+            let guard = engine.read().unwrap();
+            let engine_guard = match guard.as_ref() {
+                Some(e) => e,
+                None => return format_http_response(500, "Internal Server Error", "Engine not initialized"),
+            };
+            
+            let tag_keys = if let Some(ref meas) = measurement {
+                engine_guard.get_tag_keys(meas)
+            } else {
+                let mut all_keys = std::collections::HashSet::new();
+                for meas in engine_guard.measurements() {
+                    for key in engine_guard.get_tag_keys(&meas) {
+                        all_keys.insert(key);
+                    }
+                }
+                all_keys.into_iter().collect()
+            };
+            
+            let tag_values: Vec<Vec<String>> = tag_keys.iter()
+                .map(|k| vec![k.clone()])
+                .collect();
+            
+            if tag_values.is_empty() {
+                format_http_response(200, "OK", "{\"results\":[{\"series\":[{\"name\":\"tagKeys\",\"values\":[]}]}]}")
+            } else {
+                let values_json: String = tag_values.iter()
+                    .map(|row| format!("[{}]", row.iter().map(|s| format!("\"{}\"", s)).collect::<Vec<_>>().join(",")))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format_http_response(200, "OK", &format!("{{\"results\":[{{\"series\":[{{\"name\":\"tagKeys\",\"values\":[{}]}}]}}]}}", values_json))
+            }
         }
         _ => format_http_response(501, "Not Implemented", "Query type not implemented"),
     }
