@@ -38,6 +38,9 @@ pub struct Engine {
     tssp_manager: TsspManager,
     compaction: CompactionManager,
     series_index: SeriesIndex,
+    shard_manager: ShardManager,
+    shard_mapper: ShardMapper,
+    tiered_storage: TieredStorageManager,
 }
 
 struct TsspManager {
@@ -56,6 +59,9 @@ impl Engine {
         let tssp_manager = TsspManager::new(tssp_data_dir, config.tssp.clone());
         let compaction = CompactionManager::new(config.compaction.clone());
         let series_index = SeriesIndex::new();
+        let shard_manager = ShardManager::new(config.data_dir.clone());
+        let shard_mapper = ShardMapper::new(3600 * 24 * 7, 1);
+        let tiered_storage = TieredStorageManager::new(config.data_dir.clone(), TierConfig::default());
 
         let mut engine = Self {
             config,
@@ -64,6 +70,9 @@ impl Engine {
             tssp_manager,
             compaction,
             series_index,
+            shard_manager,
+            shard_mapper,
+            tiered_storage,
         };
         
         engine.replay_wal()?;
@@ -176,6 +185,47 @@ impl Engine {
     
     pub fn get_tssp_file_count(&self) -> usize {
         self.tssp_manager.get_file_count()
+    }
+
+    pub fn create_shard(&self, shard_id: u64, database: &str, rp: &str) -> Result<()> {
+        self.shard_manager.create_shard(shard_id, database, rp)?;
+        Ok(())
+    }
+
+    pub fn get_shard(&self, shard_id: u64) -> Option<std::sync::Arc<ShardInfo>> {
+        self.shard_manager.get_shard(shard_id)
+    }
+
+    pub fn get_all_shards(&self) -> Vec<u64> {
+        self.shard_manager.get_all_shards()
+    }
+
+    pub fn get_shards_by_db(&self, database: &str) -> Vec<std::sync::Arc<ShardInfo>> {
+        self.shard_manager.get_shards_by_db(database)
+    }
+
+    pub fn map_shard(&self, timestamp: i64) -> u64 {
+        self.shard_mapper.map_shard(timestamp)
+    }
+
+    pub fn get_shard_path(&self, database: &str, rp: &str, shard_id: u64) -> PathBuf {
+        self.shard_mapper.get_shard_path(&self.config.data_dir, database, rp, shard_id)
+    }
+
+    pub fn determine_tier(&self, timestamp: i64) -> StorageTier {
+        self.tiered_storage.determine_tier(timestamp)
+    }
+
+    pub fn should_migrate_tier(&self, timestamp: i64, current_tier: StorageTier) -> bool {
+        self.tiered_storage.should_migrate_to_next_tier(timestamp, current_tier)
+    }
+
+    pub fn get_shard_count(&self) -> usize {
+        self.shard_manager.shard_count()
+    }
+
+    pub fn get_tier_info(&self) -> (StorageTier, StorageTier, StorageTier) {
+        (StorageTier::Hot, StorageTier::Warm, StorageTier::Cold)
     }
 
     pub fn flush(&mut self) -> Result<()> {
