@@ -17,6 +17,7 @@ pub mod downsample;
 pub mod query;
 pub mod metaclient;
 pub mod snapshot;
+pub mod scheduler;
 
 pub use config::{Config, EngineConfig, WalConfig, MemTableConfig, TsspConfig, CompactionConfig, CompressionType};
 pub use error::{Error, Result};
@@ -33,6 +34,7 @@ pub use downsample::{DownsampleInterval, DownsampleRule, DownsampleEngine, Aggre
 pub use query::{QueryRequest, QueryExecutor};
 pub use metaclient::{MetaClient, MetaClientStub, NodeInfo, ShardMapping, DatabaseInfo, ShardGroup, ReplicaShardInfo};
 pub use snapshot::{SnapshotId, SnapshotManifest, SnapshotFile, SnapshotService};
+pub use scheduler::{Scheduler, ScheduledTask, TaskId, TaskHandler, TaskExecution, TaskPriority};
 
 use std::path::PathBuf;
 use std::sync::Mutex;
