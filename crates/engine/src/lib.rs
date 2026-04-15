@@ -8,6 +8,7 @@ pub mod index;
 pub mod compaction;
 pub mod bloom;
 pub mod block_index;
+pub mod ttl;
 
 pub use config::{Config, EngineConfig, WalConfig, MemTableConfig, TsspConfig, CompactionConfig, CompressionType};
 pub use error::{Error, Result};
