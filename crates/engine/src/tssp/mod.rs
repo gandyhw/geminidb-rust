@@ -1,6 +1,7 @@
 use crate::bloom::BloomFilter;
 use crate::config::{TsspConfig, CompressionType};
 use crate::error::{Error, Result};
+use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::fs::{File, OpenOptions};
 use std::io::{BufReader, BufWriter, Read, Write};
@@ -38,7 +39,7 @@ pub struct TsspReader {
     config: TsspConfig,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash, Serialize, Deserialize)]
 pub struct FileMeta {
     pub file_id: u64,
     pub min_time: i64,

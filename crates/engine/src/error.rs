@@ -20,6 +20,9 @@ pub enum Error {
     #[error("Schema error: {0}")]
     Schema(String),
 
+    #[error("Snapshot error: {0}")]
+    Snapshot(String),
+
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
 

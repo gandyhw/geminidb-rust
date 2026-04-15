@@ -16,6 +16,7 @@ pub mod merge;
 pub mod downsample;
 pub mod query;
 pub mod metaclient;
+pub mod snapshot;
 
 pub use config::{Config, EngineConfig, WalConfig, MemTableConfig, TsspConfig, CompactionConfig, CompressionType};
 pub use error::{Error, Result};
@@ -31,6 +32,7 @@ pub use merge::{MergeCandidate, MergeResult, MergeTool, MergeScheduler};
 pub use downsample::{DownsampleInterval, DownsampleRule, DownsampleEngine, AggregatorType};
 pub use query::{QueryRequest, QueryExecutor};
 pub use metaclient::{MetaClient, MetaClientStub, NodeInfo, ShardMapping, DatabaseInfo, ShardGroup, ReplicaShardInfo};
+pub use snapshot::{SnapshotId, SnapshotManifest, SnapshotFile, SnapshotService};
 
 use std::path::PathBuf;
 use std::sync::Mutex;
