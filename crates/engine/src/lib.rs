@@ -14,6 +14,7 @@ pub mod shard;
 pub mod tiered_storage;
 pub mod merge;
 pub mod downsample;
+pub mod query;
 
 pub use config::{Config, EngineConfig, WalConfig, MemTableConfig, TsspConfig, CompactionConfig, CompressionType};
 pub use error::{Error, Result};
@@ -27,6 +28,7 @@ pub use shard::{ShardInfo, ShardManager, ShardMapper, ShardStatus};
 pub use tiered_storage::{StorageTier, TierConfig, TieredStorageManager};
 pub use merge::{MergeCandidate, MergeResult, MergeTool, MergeScheduler};
 pub use downsample::{DownsampleInterval, DownsampleRule, DownsampleEngine, AggregatorType};
+pub use query::{QueryRequest, QueryExecutor};
 
 use std::path::PathBuf;
 use std::sync::Mutex;
