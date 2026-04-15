@@ -11,6 +11,9 @@ pub mod block_index;
 pub mod ttl;
 pub mod schema;
 pub mod shard;
+pub mod tiered_storage;
+pub mod merge;
+pub mod downsample;
 
 pub use config::{Config, EngineConfig, WalConfig, MemTableConfig, TsspConfig, CompactionConfig, CompressionType};
 pub use error::{Error, Result};
@@ -21,6 +24,9 @@ pub use index::SeriesIndex;
 pub use compaction::CompactionManager;
 pub use schema::{Schema, Database, Measurement, Field, Tag, FieldType, RetentionPolicy};
 pub use shard::{ShardInfo, ShardManager, ShardMapper, ShardStatus};
+pub use tiered_storage::{StorageTier, TierConfig, TieredStorageManager};
+pub use merge::{MergeCandidate, MergeResult, MergeTool, MergeScheduler};
+pub use downsample::{DownsampleInterval, DownsampleRule, DownsampleEngine, AggregatorType};
 
 use std::path::PathBuf;
 use std::sync::Mutex;
