@@ -179,6 +179,59 @@ pub struct TimeRange {
 }
 ```
 
+### QueryResult (聚合函数支持)
+
+```rust
+pub struct QueryResult {
+    pub rows: Vec<Row>,
+    pub stats: QueryStats,
+}
+
+impl QueryResult {
+    // 聚合函数
+    pub fn count(&self, field: &str) -> usize
+    pub fn sum(&self, field: &str) -> Option<FieldValue>
+    pub fn mean(&self, field: &str) -> Option<f64>
+    pub fn min(&self, field: &str) -> Option<FieldValue>
+    pub fn max(&self, field: &str) -> Option<FieldValue>
+    pub fn first(&self, field: &str) -> Option<FieldValue>
+    pub fn last(&self, field: &str) -> Option<FieldValue>
+}
+```
+
+### InfluxQL 解析器类型
+
+```rust
+// 聚合函数枚举
+pub enum AggregateFunc {
+    Count(Option<String>),  // COUNT(*) 或 COUNT(field)
+    Sum(String),
+    Mean(String),
+    Min(String),
+    Max(String),
+    First(String),
+    Last(String),
+}
+
+// SELECT 字段
+pub enum Field {
+    Raw(String),              // 原始字段，如 "value", "*"
+    Aggregate(AggregateFunc), // 聚合函数
+}
+
+// SELECT 语句
+pub struct SelectStatement {
+    pub fields: Vec<Field>,
+    pub measurement: String,
+    pub condition: Option<String>,
+    pub group_by: Vec<String>,  // GROUP BY tag1, tag2
+    pub limit: Option<usize>,
+    pub slimit: Option<usize>,
+    pub soffset: Option<usize>,
+    pub order_by: Option<String>,
+}
+```
+
 ### FieldValue
 
 ```rust

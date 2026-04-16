@@ -46,7 +46,7 @@ A high-performance distributed time-series database written in Rust, inspired by
 | | Benchmark Tests | Done | 4 |
 | | Stress Tests | Done | 2 |
 
-### CLI Compatibility: ~90%
+### CLI Compatibility: ~92%
 
 The following InfluxDB CLI commands are supported:
 
@@ -71,6 +71,17 @@ influx -database=mydb -execute 'SELECT * FROM cpu WHERE value > 0.5'
 influx -database=mydb -execute 'SELECT * FROM cpu WHERE host = "server1" AND value > 0.5 LIMIT 10'
 influx -database=mydb -execute 'SELECT * FROM cpu ORDER BY time DESC LIMIT 100'
 influx -database=mydb -execute 'SELECT * FROM cpu SLIMIT 1'
+
+# Aggregate functions
+influx -database=mydb -execute 'SELECT COUNT(value) FROM cpu'
+influx -database=mydb -execute 'SELECT COUNT(*) FROM cpu'
+influx -database=mydb -execute 'SELECT SUM(value), MEAN(value) FROM cpu'
+influx -database=mydb -execute 'SELECT MIN(value), MAX(value) FROM cpu'
+influx -database=mydb -execute 'SELECT FIRST(value), LAST(value) FROM cpu'
+influx -database=mydb -execute 'SELECT host, COUNT(value) FROM cpu GROUP BY host'
+influx -database=mydb -execute 'SELECT region, COUNT(*) FROM cpu GROUP BY region'
+
+# SHOW statements
 influx -database=mydb -execute 'SHOW MEASUREMENTS'
 influx -database=mydb -execute 'SHOW SERIES'
 influx -database=mydb -execute 'SHOW TAG KEYS FROM cpu'
@@ -266,7 +277,7 @@ engine.close().unwrap();
 ## Testing
 
 ```bash
-# Run all tests (346/346 passing)
+# Run all tests (350+/350+ passing)
 cargo test
 
 # Run with coverage
@@ -281,10 +292,10 @@ cargo test --test engine_test -- benchmarks
 
 ### Build Status
 
-- **Build**: Successful (1 warning - crate name style)
-- **Tests**: 357/357 passing
-- **Engine Tests**: 41 passing
-- **HTTP Integration Tests**: 10 passing
+- **Build**: Successful (no warnings)
+- **Tests**: 350+/350+ passing
+- **Parser Tests (InfluxQL)**: 33 passing
+- **HTTP Integration Tests**: 13 passing
 - **Branch**: `260415-feat-improve-tssp-wal-index`
 
 ## Coverage
