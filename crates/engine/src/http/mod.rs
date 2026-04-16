@@ -147,7 +147,7 @@ fn handle_connection(
             break;
         }
         
-        if buffer.ends_with(b"\r\n\r\n") {
+        if buffer.windows(4).any(|w| w == b"\r\n\r\n") {
             break;
         }
     }
@@ -156,7 +156,12 @@ fn handle_connection(
         return Ok(());
     }
 
-    let request = String::from_utf8_lossy(&buffer).to_string();
+    let header_end = buffer.windows(4).position(|w| w == b"\r\n\r\n").map(|p| p + 4).unwrap_or(buffer.len());
+    
+    let header_part = &buffer[..header_end];
+    let body_part = if header_end < buffer.len() { &buffer[header_end..] } else { &[] };
+    
+    let request = String::from_utf8_lossy(header_part).to_string();
     let lines: Vec<&str> = request.lines().collect();
 
     if lines.is_empty() {
@@ -172,7 +177,7 @@ fn handle_connection(
         };
         format_http_response(200, "OK", &serde_json::to_string(&resp).unwrap())
     } else if first_line.starts_with("POST /WRITE") || first_line.starts_with("GET /WRITE") {
-        handle_write(&lines, &buffer, engine)
+        handle_write(&lines, body_part, engine)
     } else if first_line.starts_with("POST /QUERY") || first_line.starts_with("GET /QUERY") {
         handle_query(&lines, engine)
     } else if first_line.starts_with("GET /") {
@@ -200,7 +205,7 @@ fn handle_connection(
     Ok(())
 }
 
-fn handle_write(lines: &[&str], buffer: &[u8], engine: &Arc<RwLock<Option<Engine>>>) -> String {
+fn handle_write(lines: &[&str], body: &[u8], engine: &Arc<RwLock<Option<Engine>>>) -> String {
     let mut binding = engine.write().unwrap();
     let engine_guard = match binding.as_mut() {
         Some(e) => e,
@@ -230,19 +235,9 @@ fn handle_write(lines: &[&str], buffer: &[u8], engine: &Arc<RwLock<Option<Engine
     let mut rows_written = 0;
     let mut parse_errors = Vec::new();
 
-    let body_start = if let Some(pos) = buffer.windows(4).position(|w| w == b"\r\n\r\n") {
-        pos + 4
-    } else {
-        0
-    };
-    let body = if body_start > 0 && body_start < buffer.len() {
-        String::from_utf8_lossy(&buffer[body_start..]).to_string()
-    } else {
-        String::new()
-    };
-
-    let lines_to_parse: Vec<&str> = if !body.is_empty() {
-        body.lines().collect()
+    let body_str = String::from_utf8_lossy(body).to_string();
+    let lines_to_parse: Vec<&str> = if !body_str.is_empty() {
+        body_str.lines().collect()
     } else {
         lines.iter().skip(1).map(|s| *s).collect()
     };
@@ -677,6 +672,15 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
         }
         crate::influxql::Statement::Use { database } => {
             format_http_response(200, "OK", &format!("{{\"results\":[{{\"success\":true,\"database\":\"{}\"}}]}}", database))
+        }
+        crate::influxql::Statement::Set { key, value } => {
+            format_http_response(200, "OK", &format!("{{\"results\":[{{\"success\":true,\"key\":\"{}\",\"value\":\"{}\"}}]}}", key, value))
+        }
+        crate::influxql::Statement::Grant(_) => {
+            format_http_response(200, "OK", "{\"results\":[{\"success\":true}]}")
+        }
+        crate::influxql::Statement::Revoke(_) => {
+            format_http_response(200, "OK", "{\"results\":[{\"success\":true}]}")
         }
     }
 }

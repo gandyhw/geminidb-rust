@@ -19,6 +19,9 @@ pub enum Statement {
     Use { database: String },
     Insert { measurement: String, tags: HashMap<String, String>, fields: HashMap<String, f64>, timestamp: Option<i64> },
     AlterDatabase(AlterDatabaseStatement),
+    Set { key: String, value: String },
+    Revoke(RevokeStatement),
+    Grant(GrantStatement),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -27,6 +30,26 @@ pub struct AlterDatabaseStatement {
     pub rp_name: Option<String>,
     pub duration_seconds: Option<u64>,
     pub replica_count: Option<u32>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct SetStatement {
+    pub key: String,
+    pub value: String,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct RevokeStatement {
+    pub privilege: String,
+    pub database: Option<String>,
+    pub user: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct GrantStatement {
+    pub privilege: String,
+    pub database: Option<String>,
+    pub user: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -708,6 +731,57 @@ impl Parser {
                 self.skip_whitespace();
                 let condition = self.parse_where_condition();
                 Some(Statement::Delete { condition })
+            }
+            "SET" => {
+                self.skip_whitespace();
+                let key = self.parse_identifier().unwrap_or_default();
+                self.skip_whitespace();
+                if self.peek() == Some('=') {
+                    self.pos += 1;
+                }
+                self.skip_whitespace();
+                let value = self.parse_identifier().unwrap_or_default();
+                Some(Statement::Set { key, value })
+            }
+            "GRANT" => {
+                self.skip_whitespace();
+                let privilege = self.parse_word();
+                self.skip_whitespace();
+                let mut database = None;
+                let mut user = None;
+                
+                let next = self.parse_word();
+                if next == "ON" {
+                    database = self.parse_identifier();
+                } else if next == "TO" {
+                    user = self.parse_identifier();
+                }
+                
+                Some(Statement::Grant(GrantStatement {
+                    privilege,
+                    database,
+                    user,
+                }))
+            }
+            "REVOKE" => {
+                self.skip_whitespace();
+                let privilege = self.parse_word();
+                self.skip_whitespace();
+                let mut database = None;
+                let mut user = None;
+                
+                let next = self.parse_word();
+                if next == "ON" {
+                    database = self.parse_identifier();
+                } else if next == "FROM" {
+                    user = self.parse_identifier();
+                }
+                
+                Some(Statement::Revoke(RevokeStatement {
+                    privilege,
+                    database,
+                    user,
+                }))
             }
             "SHOW" => {
                 self.skip_whitespace();

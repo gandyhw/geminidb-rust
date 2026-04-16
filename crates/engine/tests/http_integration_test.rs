@@ -132,7 +132,6 @@ fn test_http_show_databases() {
 }
 
 #[test]
-#[ignore]
 fn test_http_write_line_protocol() {
     let temp_dir = std::env::temp_dir().join(format!("http_test_{}", std::process::id()));
     let port = get_free_port();
