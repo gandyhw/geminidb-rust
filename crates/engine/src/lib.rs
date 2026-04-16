@@ -28,6 +28,7 @@ pub use config::{Config, EngineConfig, WalConfig, MemTableConfig, TsspConfig, Co
 pub use error::{Error, Result};
 pub use wal::Wal;
 pub use memtable::MemTable;
+pub use http::{HttpServer, HttpConfig};
 pub use tssp::{TsspReader, TsspWriter, FileMeta, TableSchema, ColumnData};
 pub use index::SeriesIndex;
 pub use compaction::CompactionManager;
