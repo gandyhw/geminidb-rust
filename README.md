@@ -54,6 +54,8 @@ echo "cpu,host=server1 value=0.5" | influx -database=mydb -execute "INSERT"
 influx -database=mydb -execute 'SELECT * FROM cpu WHERE host = "server1"'
 influx -database=mydb -execute 'SELECT * FROM cpu WHERE value > 0.5'
 influx -database=mydb -execute 'SELECT * FROM cpu WHERE host = "server1" AND value > 0.5 LIMIT 10'
+influx -database=mydb -execute 'SELECT * FROM cpu ORDER BY time DESC LIMIT 100'
+influx -database=mydb -execute 'SELECT * FROM cpu SLIMIT 1'
 influx -database=mydb -execute 'SHOW MEASUREMENTS'
 influx -database=mydb -execute 'SHOW SERIES'
 influx -database=mydb -execute 'SHOW TAG KEYS FROM cpu'
