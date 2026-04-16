@@ -37,6 +37,9 @@ pub struct SelectStatement {
     pub measurement: String,
     pub condition: Option<String>,
     pub limit: Option<usize>,
+    pub slimit: Option<usize>,
+    pub soffset: Option<usize>,
+    pub order_by: Option<String>,
 }
 
 pub struct Parser {
@@ -472,6 +475,9 @@ impl Parser {
                 
                 let mut condition = None;
                 let mut limit = None;
+                let mut slimit = None;
+                let mut soffset = None;
+                let mut order_by = None;
                 
                 loop {
                     self.skip_whitespace();
@@ -491,6 +497,20 @@ impl Parser {
                         "LIMIT" => {
                             limit = self.parse_field_value().map(|v| v as usize);
                         }
+                        "SLIMIT" => {
+                            slimit = self.parse_field_value().map(|v| v as usize);
+                        }
+                        "SOFFSET" => {
+                            soffset = self.parse_field_value().map(|v| v as usize);
+                        }
+                        "ORDER" => {
+                            self.skip_whitespace();
+                            let by = self.parse_word();
+                            if by.to_uppercase() == "BY" {
+                                self.skip_whitespace();
+                                order_by = Some(self.parse_word());
+                            }
+                        }
                         "" => break,
                         _ => {
                             if self.pos < self.input.len() {
@@ -506,6 +526,9 @@ impl Parser {
                     measurement,
                     condition,
                     limit,
+                    slimit,
+                    soffset,
+                    order_by,
                 }))
             }
             "CREATE" => {
@@ -895,6 +918,34 @@ mod tests {
         match filter.unwrap() {
             crate::FilterExpr::And(_, _) => {}
             _ => panic!("expected And"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_order_by() {
+        let mut parser = Parser::new("SELECT * FROM cpu ORDER BY time DESC");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::Select(s) => {
+                assert_eq!(s.measurement, "cpu");
+                assert_eq!(s.order_by, Some("TIME".to_string()));
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_slimit() {
+        let mut parser = Parser::new("SELECT * FROM cpu SLIMIT 1");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::Select(s) => {
+                assert_eq!(s.measurement, "cpu");
+                assert_eq!(s.slimit, Some(1));
+            }
+            _ => panic!("expected Select"),
         }
     }
 }
