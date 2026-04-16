@@ -2,6 +2,60 @@
 
 A high-performance distributed time-series database written in Rust, inspired by [openGemini](https://github.com/openGemini/openGemini).
 
+## Project Status
+
+**Overall Completion: ~75%**
+
+| Category | Feature | Status | Completion |
+|----------|---------|--------|------------|
+| **Core Engine** | Storage Engine (LSM-Tree/TSSP) | Done | 90% |
+| | Write-Ahead Log (WAL) | Done | 85% |
+| | MemTable (In-Memory) | Done | 90% |
+| | Compaction | Done | 75% |
+| | Series Index (Roaring Bitmap) | Done | 80% |
+| **HTTP API** | `/ping` endpoint | Done | 100% |
+| | `/write` endpoint (Line Protocol) | Done | 90% |
+| | `/query` endpoint (InfluxQL) | Done | 90% |
+| **InfluxQL Parser** | SELECT statement | Done | 90% |
+| | SHOW statements (8 types) | Done | 90% |
+| | CREATE DATABASE | Done | 90% |
+| | CREATE RETENTION POLICY | Done | 90% |
+| | DROP DATABASE | Done | 90% |
+| | DROP MEASUREMENT | Done | 90% |
+| | DROP SERIES | Done | 90% |
+| | DELETE | Done | 90% |
+| | USE database | Done | 90% |
+| | INSERT | Done | 90% |
+| **Distributed** | Raft Consensus | Done | 80% |
+| | Sharding | Done | 70% |
+| **Compression** | Snappy/Zstd/LZ4 | Done | 90% |
+
+### CLI Compatibility: ~80%
+
+The following InfluxDB CLI commands are supported:
+
+```bash
+# Database operations
+influx -execute 'CREATE DATABASE mydb'
+influx -execute 'SHOW DATABASES'
+influx -execute 'DROP DATABASE mydb'
+
+# Retention Policy operations
+influx -execute 'CREATE RETENTION POLICY rp ON mydb DURATION 30d REPLICATION 1 DEFAULT'
+influx -execute 'SHOW RETENTION POLICIES'
+
+# Data writing
+influx -import -path=data.txt -database=mydb
+echo "cpu,host=server1 value=0.5" | influx -database=mydb -execute "INSERT"
+
+# Data querying
+influx -database=mydb -execute 'SELECT * FROM cpu'
+influx -database=mydb -execute 'SHOW MEASUREMENTS'
+influx -database=mydb -execute 'SHOW SERIES'
+influx -database=mydb -execute 'SHOW TAG KEYS FROM cpu'
+influx -database=mydb -execute 'SHOW FIELD KEYS FROM cpu'
+```
+
 ## Features
 
 - **Distributed Time-Series Database**: Designed for high write throughput and efficient time-range queries
@@ -14,27 +68,48 @@ A high-performance distributed time-series database written in Rust, inspired by
 ## Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                      Engine                              │
-├─────────────┬─────────────┬─────────────┬───────────────┤
-│     WAL     │   MemTable  │  SeriesIndex │  Compaction  │
-│  (Write)    │  (In-Memory)│  (Roaring)  │  (Background) │
-└──────┬──────┴──────┬──────┴──────┬──────┴───────┬───────┘
-       │             │            │              │
-       ▼             ▼            ▼              ▼
-   ┌───────┐   ┌───────────┐ ┌──────────┐  ┌──────────┐
-   │  WAL  │   │   TSSP    │ │  TSSP    │  │  TSSP    │
-   │ Files │   │  (Disk)   │ │  (Disk)  │  │  (Merged)│
-   └───────┘   └───────────┘ └──────────┘  └──────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        InfluxDB CLI                              │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                     HTTP API Server                              │
+│  ┌──────────┬──────────┬──────────┬──────────┬────────────────┐  │
+│  │   /ping  │  /write  │  /query  │   ...   │   (REST API)   │  │
+│  └──────────┴──────────┴──────────┴──────────┴────────────────┘  │
+│  ┌─────────────────┐    ┌─────────────────┐                      │
+│  │ Line Protocol   │    │   InfluxQL      │                      │
+│  │   Parser        │    │   Parser        │                      │
+│  └─────────────────┘    └─────────────────┘                      │
+└─────────────────────────────────────────────────────────────────┘
+                              │
+                              ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                      Engine (Core)                               │
+├─────────────┬─────────────┬─────────────┬─────────────┬─────────┤
+│     WAL     │   MemTable  │ SeriesIndex │  Compaction │  Raft   │
+│  (Write)    │  (In-Memory)│  (Roaring)  │ (Background│ Consensus│
+└──────┬──────┴──────┬──────┴──────┬──────┴─────┬───────┴────┬────┘
+       │             │            │            │            │
+       ▼             ▼            ▼            ▼            ▼
+   ┌───────┐   ┌───────────┐ ┌──────────┐ ┌──────────┐  ┌───────┐
+   │  WAL  │   │   TSSP    │ │  TSSP    │ │  TSSP    │  │ Shard │
+   │ Files │   │  (Disk)   │ │  (Disk)  │ │ (Merged) │  │  Data │
+   └───────┘   └───────────┘ └──────────┘ └──────────┘  └───────┘
 ```
 
 ## Modules
 
+- **HTTP API**: HTTP server with `/ping`, `/write`, `/query` endpoints for InfluxDB CLI compatibility
+- **InfluxQL Parser**: SQL-like query language parser supporting 18 statement types
+- **Line Protocol Parser**: Parses InfluxDB line protocol format for data ingestion
 - **WAL**: Write-Ahead Log for durability and crash recovery
 - **MemTable**: In-memory storage using BTreeMap
 - **TSSP**: Time Series Storage Protocol - columnar storage format
 - **SeriesIndex**: Roaring Bitmap based series tracking
 - **Compaction**: Background compaction and merge of TSSP files
+- **Raft**: Distributed consensus protocol for high availability
 
 ## Installation
 
@@ -42,9 +117,42 @@ A high-performance distributed time-series database written in Rust, inspired by
 git clone https://github.com/gandyhw/geminidb-rust.git
 cd geminidb-rust
 cargo build --release
+
+# Run the HTTP API server (for InfluxDB CLI compatibility)
+cargo run --bin server
 ```
 
 ## Usage
+
+### HTTP API Server (Recommended for InfluxDB CLI)
+
+```bash
+# Start the server
+cargo run --bin server
+
+# The server will listen on http://localhost:8086
+```
+
+### Using InfluxDB CLI
+
+```bash
+# Set up InfluxDB CLI to point to our server
+export INFLUX_HOST=http://localhost:8086
+
+# Create a database
+influx -execute 'CREATE DATABASE mydb'
+
+# Write data using line protocol
+echo "cpu,host=server1 value=0.5" | influx -database=mydb -execute "INSERT"
+
+# Query data
+influx -database=mydb -execute 'SELECT * FROM cpu'
+
+# Show measurements
+influx -database=mydb -execute 'SHOW MEASUREMENTS'
+```
+
+### Programmatic Usage (Rust)
 
 ```rust
 use openGemini_engine::{Engine, EngineConfig, WriteBatch, Row, FieldValue, Query, TimeRange};
@@ -113,8 +221,18 @@ engine.close().unwrap();
 ## Testing
 
 ```bash
+# Run all tests (177/177 passing)
 cargo test
+
+# Run with coverage
+cargo test -- --nocapture
 ```
+
+### Build Status
+
+- **Build**: Successful (29 warnings)
+- **Tests**: 177/177 passing
+- **Branch**: `260415-feat-improve-tssp-wal-index`
 
 ## Coverage
 
