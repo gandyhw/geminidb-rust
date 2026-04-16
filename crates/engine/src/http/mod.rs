@@ -476,10 +476,26 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
             }
             format_http_response(200, "OK", "{\"results\":[{\"success\":true}]}")
         }
-        crate::influxql::Statement::DropSeries(_) => {
+        crate::influxql::Statement::DropSeries { condition: _ } => {
+            let mut guard = engine.write().unwrap();
+            let engine_guard = match guard.as_mut() {
+                Some(e) => e,
+                None => return format_http_response(500, "Internal Server Error", "Engine not initialized"),
+            };
+            if let Err(e) = engine_guard.drop_series(None) {
+                return format_http_response(500, "Internal Server Error", &e.to_string());
+            }
             format_http_response(200, "OK", "{\"results\":[{\"success\":true}]}")
         }
-        crate::influxql::Statement::Delete => {
+        crate::influxql::Statement::Delete { condition: _ } => {
+            let mut guard = engine.write().unwrap();
+            let engine_guard = match guard.as_mut() {
+                Some(e) => e,
+                None => return format_http_response(500, "Internal Server Error", "Engine not initialized"),
+            };
+            if let Err(e) = engine_guard.delete("", None) {
+                return format_http_response(500, "Internal Server Error", &e.to_string());
+            }
             format_http_response(200, "OK", "{\"results\":[{\"success\":true}]}")
         }
         crate::influxql::Statement::ShowSeries => {

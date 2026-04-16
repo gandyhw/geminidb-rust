@@ -4,7 +4,7 @@ A high-performance distributed time-series database written in Rust, inspired by
 
 ## Project Status
 
-**Overall Completion: ~90%**
+**Overall Completion: ~92%**
 
 | Category | Feature | Status | Completion |
 |----------|---------|--------|------------|
@@ -16,10 +16,11 @@ A high-performance distributed time-series database written in Rust, inspired by
 | | Aggregation Functions (COUNT, SUM, MEAN, MIN, MAX, FIRST, LAST) | Done | 95% |
 | | GROUP BY time | Done | 90% |
 | | Engine Statistics | Done | 95% |
-| | drop_series/delete Operations | Done | 90% |
+| | drop_series/delete Operations | Done | 92% |
 | **HTTP API** | `/ping` endpoint | Done | 100% |
 | | `/write` endpoint (Line Protocol) | Done | 95% |
 | | `/query` endpoint (InfluxQL) | Done | 95% |
+| | HTTP API Integration Tests | Done | 10+ |
 | **InfluxQL Parser** | SELECT statement | Done | 95% |
 | | WHERE clause (AND, OR, comparisons) | Done | 95% |
 | | ORDER BY, SLIMIT, SOFFSET | Done | 90% |
@@ -29,8 +30,8 @@ A high-performance distributed time-series database written in Rust, inspired by
 | | CREATE RETENTION POLICY | Done | 90% |
 | | DROP DATABASE | Done | 90% |
 | | DROP MEASUREMENT | Done | 90% |
-| | DROP SERIES | Done | 90% |
-| | DELETE | Done | 90% |
+| | DROP SERIES (with WHERE) | Done | 92% |
+| | DELETE (with WHERE) | Done | 92% |
 | | USE database | Done | 90% |
 | | INSERT | Done | 90% |
 | **Distributed** | Raft Consensus | Done | 80% |
@@ -39,11 +40,12 @@ A high-performance distributed time-series database written in Rust, inspired by
 | **Binaries** | server binary | Done | 100% |
 | | client binary (testing) | Done | 100% |
 | **Testing** | Unit Tests | Done | 41 |
-| | Integration Tests | Done | 15+ |
+| | Integration Tests | Done | 25+ |
+| | HTTP API Tests | Done | 10 |
 | | Benchmark Tests | Done | 4 |
 | | Stress Tests | Done | 2 |
 
-### CLI Compatibility: ~88%
+### CLI Compatibility: ~90%
 
 The following InfluxDB CLI commands are supported:
 
@@ -277,9 +279,10 @@ cargo test --test engine_test -- benchmarks
 
 ### Build Status
 
-- **Build**: Successful (15 warnings)
-- **Tests**: 346/346 passing
-- **Engine Tests**: 41 passing (新增 15 个测试)
+- **Build**: Successful (23 warnings)
+- **Tests**: 357/357 passing
+- **Engine Tests**: 41 passing
+- **HTTP Integration Tests**: 10 passing
 - **Branch**: `260415-feat-improve-tssp-wal-index`
 
 ## Coverage

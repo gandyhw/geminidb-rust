@@ -7,8 +7,8 @@ pub enum Statement {
     CreateRetentionPolicy(CreateRetentionPolicy),
     DropDatabase(String),
     DropMeasurement(String),
-    DropSeries(Option<String>),
-    Delete,
+    DropSeries { condition: Option<String> },
+    Delete { condition: Option<String> },
     ShowDatabases,
     ShowMeasurements,
     ShowRetentionPolicies(Option<String>),
@@ -170,6 +170,24 @@ impl Parser {
             }
             self.pos = start;
         }
+        None
+    }
+
+    fn parse_where_condition(&mut self) -> Option<String> {
+        self.skip_whitespace();
+        let start = self.pos;
+        let word = self.parse_word();
+        if word.to_uppercase() == "WHERE" {
+            self.skip_whitespace();
+            let cond_start = self.pos;
+            while let Some(_) = self.peek() {
+                self.pos += 1;
+            }
+            if cond_start < self.pos {
+                return Some(self.input[cond_start..self.pos].trim().to_string());
+            }
+        }
+        self.pos = start;
         None
     }
 
@@ -603,13 +621,17 @@ impl Parser {
                         Some(Statement::DropMeasurement(name))
                     }
                     "SERIES" => {
-                        Some(Statement::DropSeries(None))
+                        self.skip_whitespace();
+                        let condition = self.parse_where_condition();
+                        Some(Statement::DropSeries { condition })
                     }
                     _ => None,
                 }
             }
             "DELETE" => {
-                Some(Statement::Delete)
+                self.skip_whitespace();
+                let condition = self.parse_where_condition();
+                Some(Statement::Delete { condition })
             }
             "SHOW" => {
                 self.skip_whitespace();
@@ -944,6 +966,58 @@ mod tests {
                 assert_eq!(s.slimit, Some(1));
             }
             _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_parse_drop_series() {
+        let mut parser = Parser::new("DROP SERIES FROM cpu");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::DropSeries { condition } => {
+                assert!(condition.is_none());
+            }
+            _ => panic!("expected DropSeries"),
+        }
+    }
+
+    #[test]
+    fn test_parse_drop_series_with_where() {
+        let mut parser = Parser::new("DROP SERIES WHERE host = 'server1'");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::DropSeries { condition } => {
+                assert!(condition.is_some());
+            }
+            _ => panic!("expected DropSeries"),
+        }
+    }
+
+    #[test]
+    fn test_parse_delete() {
+        let mut parser = Parser::new("DELETE");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::Delete { condition } => {
+                assert!(condition.is_none());
+            }
+            _ => panic!("expected Delete"),
+        }
+    }
+
+    #[test]
+    fn test_parse_delete_with_where() {
+        let mut parser = Parser::new("DELETE WHERE time < 1000");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::Delete { condition } => {
+                assert!(condition.is_some());
+            }
+            _ => panic!("expected Delete"),
         }
     }
 }
