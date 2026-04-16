@@ -31,6 +31,7 @@ pub mod otel;
 pub mod backup;
 pub mod syscontrol;
 pub mod arrow_flight;
+pub mod cache;
 
 pub use config::{Config, EngineConfig, WalConfig, MemTableConfig, TsspConfig, CompactionConfig, CompressionType};
 pub use error::{Error, Result};
@@ -53,6 +54,8 @@ pub use scheduler::{Scheduler, ScheduledTask, TaskId, TaskHandler, TaskExecution
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex, RwLock};
 
+use crate::cache::{CacheConfig, QueryCache, generate_cache_key};
+
 pub struct Engine {
     config: EngineConfig,
     wal: Wal,
@@ -69,6 +72,7 @@ pub struct Engine {
     measurement_field_keys: std::collections::HashMap<String, std::collections::HashSet<String>>,
     series_key_to_id: std::collections::HashMap<Vec<u8>, u64>,
     deleted_series: std::collections::HashSet<u64>,
+    query_cache: QueryCache,
 }
 
 struct TsspManager {
@@ -91,6 +95,7 @@ impl Engine {
         let shard_mapper = ShardMapper::new(3600 * 24 * 7, 1);
         let tiered_storage = TieredStorageManager::new(config.data_dir.clone(), TierConfig::default());
         let schema = Arc::new(RwLock::new(Schema::new()));
+        let query_cache = QueryCache::new(CacheConfig::default());
 
         let mut engine = Self {
             config,
@@ -108,6 +113,7 @@ impl Engine {
             measurement_field_keys: std::collections::HashMap::new(),
             series_key_to_id: std::collections::HashMap::new(),
             deleted_series: std::collections::HashSet::new(),
+            query_cache,
         };
         
         engine.replay_wal()?;
@@ -503,6 +509,33 @@ impl Engine {
     pub fn get_series_id(&self, measurement: &str, tags: &std::collections::HashMap<String, String>) -> Option<u64> {
         let series_key = Self::encode_series_key(measurement, tags);
         self.series_key_to_id.get(&series_key).copied()
+    }
+
+    pub fn get_cache_stats(&self) -> crate::cache::CacheStats {
+        self.query_cache.stats()
+    }
+
+    pub fn invalidate_cache(&self, key: Option<&str>) {
+        match key {
+            Some(k) => self.query_cache.invalidate(k),
+            None => self.query_cache.clear(),
+        }
+    }
+
+    pub fn invalidate_cache_by_prefix(&self, prefix: &str) {
+        self.query_cache.invalidate_prefix(prefix);
+    }
+
+    pub fn cache_query_result(&self, database: &str, measurement: &str, query: &str, time_range: (i64, i64), result: &QueryResult) {
+        let key = generate_cache_key(database, measurement, query, time_range);
+        if let Ok(value) = serde_json::to_vec(result) {
+            self.query_cache.insert(key, value);
+        }
+    }
+
+    pub fn get_cached_query_result(&self, database: &str, measurement: &str, query: &str, time_range: (i64, i64)) -> Option<QueryResult> {
+        let key = generate_cache_key(database, measurement, query, time_range);
+        self.query_cache.get(&key)
     }
 }
 
@@ -951,6 +984,7 @@ impl PartialOrd for FieldValue {
     }
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct QueryResult {
     pub rows: Vec<Row>,
     pub stats: QueryStats,
@@ -1082,7 +1116,7 @@ impl QueryResult {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct QueryStats {
     pub files_read: usize,
     pub rows_scanned: usize,
