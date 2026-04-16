@@ -473,6 +473,21 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
             }
             format_http_response(200, "OK", "{\"results\":[{\"success\":true}]}")
         }
+        crate::influxql::Statement::AlterDatabase(alter_db) => {
+            let mut guard = engine.write().unwrap();
+            let engine_guard = match guard.as_mut() {
+                Some(e) => e,
+                None => return format_http_response(500, "Internal Server Error", "Engine not initialized"),
+            };
+            if let Some(rp_name) = alter_db.rp_name {
+                if let Some(duration) = alter_db.duration_seconds {
+                    if let Err(e) = engine_guard.create_retention_policy(&alter_db.name, &rp_name, duration, alter_db.replica_count.unwrap_or(1)) {
+                        return format_http_response(500, "Internal Server Error", &e.to_string());
+                    }
+                }
+            }
+            format_http_response(200, "OK", "{\"results\":[{\"success\":true}]}")
+        }
         crate::influxql::Statement::DropSeries { condition: _ } => {
             let mut guard = engine.write().unwrap();
             let engine_guard = match guard.as_mut() {

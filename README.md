@@ -28,6 +28,7 @@ A high-performance distributed time-series database written in Rust, inspired by
 | | SHOW statements (9 types) | Done | 90% |
 | | CREATE DATABASE | Done | 90% |
 | | CREATE RETENTION POLICY | Done | 90% |
+| | ALTER DATABASE | Done | 85% |
 | | DROP DATABASE | Done | 90% |
 | | DROP MEASUREMENT | Done | 90% |
 | | DROP SERIES (with WHERE) | Done | 92% |
@@ -52,6 +53,7 @@ The following InfluxDB CLI commands are supported:
 ```bash
 # Database operations
 influx -execute 'CREATE DATABASE mydb'
+influx -execute 'ALTER DATABASE mydb SET RETENTION POLICY rp DURATION 30d REPLICATION 1'
 influx -execute 'SHOW DATABASES'
 influx -execute 'DROP DATABASE mydb'
 

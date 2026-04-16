@@ -18,6 +18,15 @@ pub enum Statement {
     ShowSeries,
     Use { database: String },
     Insert { measurement: String, tags: HashMap<String, String>, fields: HashMap<String, f64>, timestamp: Option<i64> },
+    AlterDatabase(AlterDatabaseStatement),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct AlterDatabaseStatement {
+    pub name: String,
+    pub rp_name: Option<String>,
+    pub duration_seconds: Option<u64>,
+    pub replica_count: Option<u32>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -628,6 +637,71 @@ impl Parser {
                         Some(Statement::DropSeries { condition })
                     }
                     _ => None,
+                }
+            }
+            "ALTER" => {
+                self.skip_whitespace();
+                let next = self.parse_word();
+                if next == "DATABASE" {
+                    self.skip_whitespace();
+                    let name = self.parse_identifier()?;
+                    
+                    let mut rp_name = None;
+                    let mut duration_seconds = None;
+                    let mut replica_count = None;
+                    
+                    while let Some(word) = self.parse_word_not_empty() {
+                        match word.to_uppercase().as_str() {
+                            "SET" => {
+                                self.skip_whitespace();
+                                let next_word = self.parse_word().to_uppercase();
+                                if next_word == "RETENTION" {
+                                    self.skip_whitespace();
+                                    let next_word2 = self.parse_word().to_uppercase();
+                                    if next_word2 == "POLICY" || next_word2 == "RP" {
+                                        self.skip_whitespace();
+                                        rp_name = self.parse_identifier();
+                                    }
+                                }
+                            }
+                            "RETENTION" => {
+                                self.skip_whitespace();
+                                let next_word = self.parse_word().to_uppercase();
+                                if next_word == "POLICY" || next_word == "RP" {
+                                    self.skip_whitespace();
+                                    rp_name = self.parse_identifier();
+                                }
+                            }
+                            "DURATION" => {
+                                self.skip_whitespace();
+                                if self.peek() == Some('=') {
+                                    self.pos += 1;
+                                }
+                                self.skip_whitespace();
+                                duration_seconds = Some(self.parse_duration());
+                            }
+                            "REPLICATION" => {
+                                self.skip_whitespace();
+                                if self.peek() == Some('=') {
+                                    self.pos += 1;
+                                }
+                                self.skip_whitespace();
+                                if let Some(n) = self.parse_number() {
+                                    replica_count = Some(n as u32);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                    
+                    Some(Statement::AlterDatabase(AlterDatabaseStatement {
+                        name,
+                        rp_name,
+                        duration_seconds,
+                        replica_count,
+                    }))
+                } else {
+                    None
                 }
             }
             "DELETE" => {
