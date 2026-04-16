@@ -4,18 +4,19 @@ A high-performance distributed time-series database written in Rust, inspired by
 
 ## Project Status
 
-**Overall Completion: ~88%**
+**Overall Completion: ~90%**
 
 | Category | Feature | Status | Completion |
 |----------|---------|--------|------------|
 | **Core Engine** | Storage Engine (LSM-Tree/TSSP) | Done | 95% |
-| | Write-Ahead Log (WAL) | Done | 90% |
+| | Write-Ahead Log (WAL) | Done | 92% |
 | | MemTable (In-Memory) | Done | 95% |
 | | Compaction | Done | 80% |
-| | Series Index (Roaring Bitmap) | Done | 85% |
-| | Aggregation Functions (COUNT, SUM, MEAN, MIN, MAX) | Done | 90% |
-| | GROUP BY time | Done | 85% |
-| | Engine Statistics | Done | 90% |
+| | Series Index (Roaring Bitmap) | Done | 90% |
+| | Aggregation Functions (COUNT, SUM, MEAN, MIN, MAX, FIRST, LAST) | Done | 95% |
+| | GROUP BY time | Done | 90% |
+| | Engine Statistics | Done | 95% |
+| | drop_series/delete Operations | Done | 90% |
 | **HTTP API** | `/ping` endpoint | Done | 100% |
 | | `/write` endpoint (Line Protocol) | Done | 95% |
 | | `/query` endpoint (InfluxQL) | Done | 95% |
@@ -37,11 +38,12 @@ A high-performance distributed time-series database written in Rust, inspired by
 | **Compression** | Snappy/Zstd/LZ4 | Done | 90% |
 | **Binaries** | server binary | Done | 100% |
 | | client binary (testing) | Done | 100% |
-| **Testing** | Unit Tests | Done | 26 |
+| **Testing** | Unit Tests | Done | 41 |
 | | Integration Tests | Done | 15+ |
 | | Benchmark Tests | Done | 4 |
+| | Stress Tests | Done | 2 |
 
-### CLI Compatibility: ~85%
+### CLI Compatibility: ~88%
 
 The following InfluxDB CLI commands are supported:
 
@@ -260,7 +262,7 @@ engine.close().unwrap();
 ## Testing
 
 ```bash
-# Run all tests (323/323 passing)
+# Run all tests (346/346 passing)
 cargo test
 
 # Run with coverage
@@ -275,9 +277,9 @@ cargo test --test engine_test -- benchmarks
 
 ### Build Status
 
-- **Build**: Successful (36 warnings)
-- **Tests**: 323/323 passing
-- **Engine Tests**: 26 passing
+- **Build**: Successful (15 warnings)
+- **Tests**: 346/346 passing
+- **Engine Tests**: 41 passing (新增 15 个测试)
 - **Branch**: `260415-feat-improve-tssp-wal-index`
 
 ## Coverage

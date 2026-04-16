@@ -3,9 +3,9 @@ use crate::FileMeta;
 use serde::{Serialize, Deserialize};
 use std::collections::HashMap;
 use std::fs::{self, File};
-use std::io::{self, BufReader, BufWriter, Write};
+use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, RwLock};
+use std::sync::RwLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

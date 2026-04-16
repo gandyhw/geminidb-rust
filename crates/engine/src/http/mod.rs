@@ -1,9 +1,8 @@
 use crate::error::{Error, Result};
-use crate::line_protocol::{LineProtocolParser, ParsedLine};
+use crate::line_protocol::LineProtocolParser;
 use crate::influxql::Parser;
-use crate::{Engine, EngineConfig, WriteBatch, Row, FieldValue, TimeRange, QueryRequest};
+use crate::{Engine, WriteBatch, Row, FieldValue, TimeRange, QueryRequest};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::io::{Read, Write as IoWrite};
 use std::thread;

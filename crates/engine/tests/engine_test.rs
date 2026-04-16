@@ -1,6 +1,7 @@
 use openGemini_engine::config::{EngineConfig, WalConfig, MemTableConfig, TsspConfig, CompactionConfig, CompressionType};
 use openGemini_engine::{Engine, WriteBatch, Row, FieldValue, Query, TimeRange};
 use std::collections::HashMap;
+use std::time::Instant;
 use tempfile::TempDir;
 
 fn create_test_engine_config(temp_dir: &TempDir) -> EngineConfig {
@@ -701,5 +702,597 @@ mod benchmarks {
 
         println!("Aggregation (1000 rows x 100 iterations): {:?}", elapsed);
         assert!(elapsed.as_millis() < 1000);
+    }
+}
+
+#[test]
+fn test_engine_drop_series_by_id() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_engine_config(&temp_dir);
+
+    let mut engine = Engine::new(config).unwrap();
+
+    for series_id in 0..3 {
+        let mut tags = std::collections::HashMap::new();
+        tags.insert("host".to_string(), format!("server{}", series_id));
+
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("cpu".to_string(), FieldValue::Float(50.0 + series_id as f64));
+
+        let batch = WriteBatch {
+            database: "test_db".to_string(),
+            table: "cpu".to_string(),
+            rows: vec![Row {
+                tags: tags.clone(),
+                fields,
+                timestamp: 1000 + series_id as i64 * 100,
+            }],
+            timestamp: 1000 + series_id as i64 * 100,
+        };
+
+        engine.write(batch).unwrap();
+    }
+
+    let series_count_before = engine.get_series_count();
+    assert_eq!(series_count_before, 3);
+
+    let mut query_tags = std::collections::HashMap::new();
+    query_tags.insert("host".to_string(), "server1".to_string());
+    let series_id = engine.get_series_id("cpu", &query_tags).unwrap();
+    engine.drop_series(Some(series_id)).unwrap();
+
+    let series_count_after = engine.get_series_count();
+    assert!(series_count_after < series_count_before);
+}
+
+#[test]
+fn test_engine_drop_all_series() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_engine_config(&temp_dir);
+
+    let mut engine = Engine::new(config).unwrap();
+
+    for series_id in 0..5 {
+        let mut tags = std::collections::HashMap::new();
+        tags.insert("host".to_string(), format!("server{}", series_id));
+
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("cpu".to_string(), FieldValue::Float(50.0 + series_id as f64));
+
+        let batch = WriteBatch {
+            database: "test_db".to_string(),
+            table: "cpu".to_string(),
+            rows: vec![Row {
+                tags,
+                fields,
+                timestamp: 1000 + series_id as i64 * 100,
+            }],
+            timestamp: 1000 + series_id as i64 * 100,
+        };
+
+        engine.write(batch).unwrap();
+    }
+
+    engine.drop_series(None).unwrap();
+
+    let stats = engine.get_stats();
+    assert_eq!(stats.series_count, 0);
+}
+
+#[test]
+fn test_engine_delete_with_tags() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_engine_config(&temp_dir);
+
+    let mut engine = Engine::new(config).unwrap();
+
+    let mut tags1 = std::collections::HashMap::new();
+    tags1.insert("host".to_string(), "server1".to_string());
+    let batch1 = WriteBatch {
+        database: "test_db".to_string(),
+        table: "cpu".to_string(),
+        rows: vec![Row {
+            tags: tags1.clone(),
+            fields: std::collections::HashMap::new(),
+            timestamp: 1000,
+        }],
+        timestamp: 1000,
+    };
+    engine.write(batch1).unwrap();
+
+    let mut tags2 = std::collections::HashMap::new();
+    tags2.insert("host".to_string(), "server2".to_string());
+    let batch2 = WriteBatch {
+        database: "test_db".to_string(),
+        table: "cpu".to_string(),
+        rows: vec![Row {
+            tags: tags2.clone(),
+            fields: std::collections::HashMap::new(),
+            timestamp: 2000,
+        }],
+        timestamp: 2000,
+    };
+    engine.write(batch2).unwrap();
+
+    engine.delete("cpu", Some(&tags1)).unwrap();
+
+    let stats = engine.get_stats();
+    assert!(stats.memtable_row_count < 2);
+}
+
+#[test]
+fn test_engine_get_series_id() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_engine_config(&temp_dir);
+
+    let mut engine = Engine::new(config).unwrap();
+
+    let mut tags = std::collections::HashMap::new();
+    tags.insert("host".to_string(), "server1".to_string());
+
+    let batch = WriteBatch {
+        database: "test_db".to_string(),
+        table: "cpu".to_string(),
+        rows: vec![Row {
+            tags,
+            fields: std::collections::HashMap::new(),
+            timestamp: 1000,
+        }],
+        timestamp: 1000,
+    };
+    engine.write(batch).unwrap();
+
+    let mut query_tags = std::collections::HashMap::new();
+    query_tags.insert("host".to_string(), "server1".to_string());
+
+    let series_id = engine.get_series_id("cpu", &query_tags);
+    assert!(series_id.is_some());
+}
+
+#[test]
+fn test_engine_is_series_deleted() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_engine_config(&temp_dir);
+
+    let mut engine = Engine::new(config).unwrap();
+
+    let batch = create_test_write_batch(1000);
+    engine.write(batch).unwrap();
+
+    let mut query_tags = std::collections::HashMap::new();
+    query_tags.insert("host".to_string(), "server1".to_string());
+    let series_id = engine.get_series_id("cpu", &query_tags).unwrap();
+    
+    assert!(!engine.is_series_deleted(series_id));
+    
+    engine.drop_series(Some(series_id)).unwrap();
+    
+    assert!(engine.is_series_deleted(series_id));
+}
+
+#[test]
+fn test_engine_batch_write_performance() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_engine_config(&temp_dir);
+
+    let mut engine = Engine::new(config).unwrap();
+
+    let start = Instant::now();
+    let num_batches = 100;
+    let batch_size = 100;
+
+    for batch_idx in 0..num_batches {
+        let mut rows = Vec::new();
+        for row_idx in 0..batch_size {
+            let mut tags = std::collections::HashMap::new();
+            tags.insert("host".to_string(), format!("server{}", row_idx % 10));
+
+            let mut fields = std::collections::HashMap::new();
+            fields.insert("cpu".to_string(), FieldValue::Float((batch_idx * batch_size + row_idx) as f64));
+
+            rows.push(Row {
+                tags,
+                fields,
+                timestamp: (batch_idx * batch_size + row_idx) as i64,
+            });
+        }
+
+        let batch = WriteBatch {
+            database: "test_db".to_string(),
+            table: "cpu".to_string(),
+            rows,
+            timestamp: (batch_idx * batch_size) as i64,
+        };
+
+        engine.write(batch).unwrap();
+    }
+
+    let elapsed = start.elapsed();
+    let total_rows = num_batches * batch_size;
+    let throughput = total_rows as f64 / elapsed.as_secs_f64();
+
+    println!("Batch write throughput: {:.2} rows/sec ({:?} for {} rows)", throughput, elapsed, total_rows);
+    assert!(throughput > 0.0);
+}
+
+#[test]
+fn test_engine_multiple_measurements() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_engine_config(&temp_dir);
+
+    let mut engine = Engine::new(config).unwrap();
+
+    for measurement in &["cpu", "memory", "disk"] {
+        let batch = WriteBatch {
+            database: "test_db".to_string(),
+            table: measurement.to_string(),
+            rows: vec![Row {
+                tags: std::collections::HashMap::new(),
+                fields: std::collections::HashMap::new(),
+                timestamp: 1000,
+            }],
+            timestamp: 1000,
+        };
+        engine.write(batch).unwrap();
+    }
+
+    let measurements = engine.measurements();
+    assert_eq!(measurements.len(), 3);
+    assert!(measurements.contains(&"cpu".to_string()));
+    assert!(measurements.contains(&"memory".to_string()));
+    assert!(measurements.contains(&"disk".to_string()));
+}
+
+#[test]
+fn test_engine_query_result_count() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_engine_config(&temp_dir);
+
+    let mut engine = Engine::new(config).unwrap();
+
+    let mut batch = WriteBatch {
+        database: "test_db".to_string(),
+        table: "cpu".to_string(),
+        rows: vec![],
+        timestamp: 0,
+    };
+
+    for i in 0..10 {
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("value".to_string(), FieldValue::Float(i as f64));
+
+        batch.rows.push(Row {
+            tags: std::collections::HashMap::new(),
+            fields,
+            timestamp: i * 1000,
+        });
+    }
+
+    engine.write(batch).unwrap();
+
+    let query = Query {
+        database: "test_db".to_string(),
+        table: "cpu".to_string(),
+        time_range: TimeRange { start: 0, end: 10000 },
+        columns: vec![],
+        filter: None,
+        limit: None,
+    };
+
+    let result = engine.read(query).unwrap();
+    let count = result.count("value");
+    assert_eq!(count, 10);
+
+    let count_missing = result.count("missing_field");
+    assert_eq!(count_missing, 0);
+}
+
+#[test]
+fn test_engine_query_result_first_last() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_engine_config(&temp_dir);
+
+    let mut engine = Engine::new(config).unwrap();
+
+    let mut batch = WriteBatch {
+        database: "test_db".to_string(),
+        table: "cpu".to_string(),
+        rows: vec![],
+        timestamp: 0,
+    };
+
+    for i in 0..5 {
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("value".to_string(), FieldValue::Integer(i));
+
+        batch.rows.push(Row {
+            tags: std::collections::HashMap::new(),
+            fields,
+            timestamp: i * 1000,
+        });
+    }
+
+    engine.write(batch).unwrap();
+
+    let query = Query {
+        database: "test_db".to_string(),
+        table: "cpu".to_string(),
+        time_range: TimeRange { start: 0, end: 5000 },
+        columns: vec![],
+        filter: None,
+        limit: None,
+    };
+
+    let result = engine.read(query).unwrap();
+    
+    let first = result.first("value");
+    assert!(first.is_some());
+    if let Some(FieldValue::Integer(v)) = first {
+        assert_eq!(v, 0);
+    }
+
+    let last = result.last("value");
+    assert!(last.is_some());
+    if let Some(FieldValue::Integer(v)) = last {
+        assert_eq!(v, 4);
+    }
+}
+
+#[test]
+fn test_engine_aggregation_with_integer() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_engine_config(&temp_dir);
+
+    let mut engine = Engine::new(config).unwrap();
+
+    let mut batch = WriteBatch {
+        database: "test_db".to_string(),
+        table: "cpu".to_string(),
+        rows: vec![],
+        timestamp: 0,
+    };
+
+    for i in 1..=10 {
+        let mut fields = std::collections::HashMap::new();
+        fields.insert("count".to_string(), FieldValue::Integer(i));
+
+        batch.rows.push(Row {
+            tags: std::collections::HashMap::new(),
+            fields,
+            timestamp: i * 1000,
+        });
+    }
+
+    engine.write(batch).unwrap();
+
+    let query = Query {
+        database: "test_db".to_string(),
+        table: "cpu".to_string(),
+        time_range: TimeRange { start: 0, end: 11000 },
+        columns: vec![],
+        filter: None,
+        limit: None,
+    };
+
+    let result = engine.read(query).unwrap();
+
+    let sum = result.sum("count");
+    assert!(sum.is_some());
+    if let Some(FieldValue::Integer(v)) = sum {
+        assert_eq!(v, 55);
+    }
+
+    let min = result.min("count");
+    if let Some(FieldValue::Integer(v)) = min {
+        assert_eq!(v, 1);
+    }
+
+    let max = result.max("count");
+    if let Some(FieldValue::Integer(v)) = max {
+        assert_eq!(v, 10);
+    }
+
+    let mean = result.mean("count");
+    assert!(mean.is_some());
+    if let Some(v) = mean {
+        assert_eq!(v, 5.5);
+    }
+}
+
+#[test]
+fn test_engine_aggregation_with_mixed_types() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_engine_config(&temp_dir);
+
+    let mut engine = Engine::new(config).unwrap();
+
+    let mut batch = WriteBatch {
+        database: "test_db".to_string(),
+        table: "cpu".to_string(),
+        rows: vec![],
+        timestamp: 0,
+    };
+
+    batch.rows.push(Row {
+        tags: std::collections::HashMap::new(),
+        fields: {
+            let mut f = std::collections::HashMap::new();
+            f.insert("value".to_string(), FieldValue::Integer(10));
+            f
+        },
+        timestamp: 1000,
+    });
+
+    batch.rows.push(Row {
+        tags: std::collections::HashMap::new(),
+        fields: {
+            let mut f = std::collections::HashMap::new();
+            f.insert("value".to_string(), FieldValue::Float(20.5));
+            f
+        },
+        timestamp: 2000,
+    });
+
+    engine.write(batch).unwrap();
+
+    let query = Query {
+        database: "test_db".to_string(),
+        table: "cpu".to_string(),
+        time_range: TimeRange { start: 0, end: 3000 },
+        columns: vec![],
+        filter: None,
+        limit: None,
+    };
+
+    let result = engine.read(query).unwrap();
+    let sum = result.sum("value");
+    assert!(sum.is_some());
+}
+
+#[test]
+fn test_engine_time_range_exclusive() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_engine_config(&temp_dir);
+
+    let mut engine = Engine::new(config).unwrap();
+
+    let batch = WriteBatch {
+        database: "test_db".to_string(),
+        table: "cpu".to_string(),
+        rows: vec![
+            Row {
+                tags: std::collections::HashMap::new(),
+                fields: std::collections::HashMap::new(),
+                timestamp: 1000,
+            },
+            Row {
+                tags: std::collections::HashMap::new(),
+                fields: std::collections::HashMap::new(),
+                timestamp: 2000,
+            },
+            Row {
+                tags: std::collections::HashMap::new(),
+                fields: std::collections::HashMap::new(),
+                timestamp: 3000,
+            },
+        ],
+        timestamp: 1000,
+    };
+
+    engine.write(batch).unwrap();
+
+    let query = Query {
+        database: "test_db".to_string(),
+        table: "cpu".to_string(),
+        time_range: TimeRange { start: 1500, end: 2500 },
+        columns: vec![],
+        filter: None,
+        limit: None,
+    };
+
+    let result = engine.read(query).unwrap();
+    assert_eq!(result.rows.len(), 1);
+}
+
+#[test]
+fn test_engine_empty_result() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_engine_config(&temp_dir);
+
+    let engine = Engine::new(config).unwrap();
+
+    let query = Query {
+        database: "test_db".to_string(),
+        table: "cpu".to_string(),
+        time_range: TimeRange { start: 0, end: 1000 },
+        columns: vec![],
+        filter: None,
+        limit: None,
+    };
+
+    let result = engine.read(query).unwrap();
+    assert_eq!(result.rows.len(), 0);
+}
+
+#[cfg(test)]
+mod stress_tests {
+    use super::*;
+    use std::time::Instant;
+
+    #[test]
+    fn stress_large_batch_write() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = create_test_engine_config(&temp_dir);
+
+        let mut engine = Engine::new(config).unwrap();
+
+        let mut rows = Vec::new();
+        for i in 0..10000 {
+            rows.push(Row {
+                tags: {
+                    let mut t = std::collections::HashMap::new();
+                    t.insert("host".to_string(), format!("server{}", i % 100));
+                    t
+                },
+                fields: {
+                    let mut f = std::collections::HashMap::new();
+                    f.insert("cpu".to_string(), FieldValue::Float(i as f64));
+                    f
+                },
+                timestamp: i,
+            });
+        }
+
+        let batch = WriteBatch {
+            database: "test_db".to_string(),
+            table: "cpu".to_string(),
+            rows,
+            timestamp: 0,
+        };
+
+        let start = Instant::now();
+        engine.write(batch).unwrap();
+        let elapsed = start.elapsed();
+
+        println!("Large batch write (10000 rows): {:?}", elapsed);
+        assert!(elapsed.as_secs() < 10);
+    }
+
+    #[test]
+    fn stress_many_series() {
+        let temp_dir = TempDir::new().unwrap();
+        let config = create_test_engine_config(&temp_dir);
+
+        let mut engine = Engine::new(config).unwrap();
+
+        let num_series: usize = 1000;
+        for i in 0..num_series {
+            let mut tags = std::collections::HashMap::new();
+            tags.insert("host".to_string(), format!("server{}", i));
+            tags.insert("region".to_string(), format!("region{}", i % 10));
+
+            let batch = WriteBatch {
+                database: "test_db".to_string(),
+                table: "metrics".to_string(),
+                rows: vec![Row {
+                    tags,
+                    fields: {
+                        let mut f = std::collections::HashMap::new();
+                        f.insert("value".to_string(), FieldValue::Float(i as f64));
+                        f
+                    },
+                    timestamp: i as i64,
+                }],
+                timestamp: i as i64,
+            };
+
+            engine.write(batch).unwrap();
+        }
+
+        let series_count = engine.get_series_count();
+        assert_eq!(series_count, num_series);
+
+        let tag_keys = engine.get_tag_keys("metrics");
+        assert!(tag_keys.len() >= 2);
     }
 }

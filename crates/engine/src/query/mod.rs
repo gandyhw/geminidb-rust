@@ -1,5 +1,5 @@
 use crate::error::Result;
-use crate::schema::{Schema, Measurement};
+use crate::schema::Schema;
 use crate::{Row, FieldValue, FilterExpr, TimeRange};
 
 #[derive(Debug, Clone)]

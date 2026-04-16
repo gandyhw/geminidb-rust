@@ -59,6 +59,8 @@ pub struct Engine {
     measurements: std::collections::HashSet<String>,
     measurement_tag_keys: std::collections::HashMap<String, std::collections::HashSet<String>>,
     measurement_field_keys: std::collections::HashMap<String, std::collections::HashSet<String>>,
+    series_key_to_id: std::collections::HashMap<Vec<u8>, u64>,
+    deleted_series: std::collections::HashSet<u64>,
 }
 
 struct TsspManager {
@@ -96,6 +98,8 @@ impl Engine {
             measurements: std::collections::HashSet::new(),
             measurement_tag_keys: std::collections::HashMap::new(),
             measurement_field_keys: std::collections::HashMap::new(),
+            series_key_to_id: std::collections::HashMap::new(),
+            deleted_series: std::collections::HashSet::new(),
         };
         
         engine.replay_wal()?;
@@ -106,6 +110,7 @@ impl Engine {
     fn replay_wal(&mut self) -> Result<()> {
         let series_index = &mut self.series_index;
         let memtable = &mut self.memtable;
+        let series_key_to_id = &mut self.series_key_to_id;
         
         self.wal.replay(|batch| {
             for row in &batch.rows {
@@ -113,6 +118,7 @@ impl Engine {
                 let series_id = Self::compute_series_id(&series_key);
                 if !series_index.contains(series_id) {
                     series_index.add(series_id);
+                    series_key_to_id.insert(series_key, series_id);
                 }
             }
             memtable.insert(batch.clone())?;
@@ -162,6 +168,7 @@ impl Engine {
             let series_id = Self::compute_series_id(&series_key);
             if !self.series_index.contains(series_id) {
                 self.series_index.add(series_id);
+                self.series_key_to_id.insert(series_key, series_id);
             }
         }
         self.wal.write(&batch)?;
@@ -446,12 +453,48 @@ impl Engine {
         Ok(())
     }
 
-    pub fn drop_series(&mut self, _series_id: Option<u64>) -> Result<()> {
+    pub fn drop_series(&mut self, series_id: Option<u64>) -> Result<()> {
+        match series_id {
+            Some(id) => {
+                self.series_index.remove(id);
+                self.deleted_series.insert(id);
+            }
+            None => {
+                for (_, id) in &self.series_key_to_id {
+                    self.series_index.remove(*id);
+                    self.deleted_series.insert(*id);
+                }
+            }
+        }
+        self.memtable.clear()?;
         Ok(())
     }
 
-    pub fn delete(&mut self, _measurement: &str, _tags: Option<&std::collections::HashMap<String, String>>) -> Result<()> {
+    pub fn delete(&mut self, measurement: &str, tags: Option<&std::collections::HashMap<String, String>>) -> Result<()> {
+        if let Some(tags_to_delete) = tags {
+            let series_key = Self::encode_series_key(measurement, tags_to_delete);
+            let series_id = Self::compute_series_id(&series_key);
+            if self.series_key_to_id.contains_key(&series_key) {
+                self.series_index.remove(series_id);
+                self.deleted_series.insert(series_id);
+            }
+        } else {
+            if let Some(id) = self.series_key_to_id.get(&Self::encode_series_key(measurement, &std::collections::HashMap::new())) {
+                self.series_index.remove(*id);
+                self.deleted_series.insert(*id);
+            }
+        }
+        self.memtable.clear()?;
         Ok(())
+    }
+
+    pub fn is_series_deleted(&self, series_id: u64) -> bool {
+        self.deleted_series.contains(&series_id)
+    }
+
+    pub fn get_series_id(&self, measurement: &str, tags: &std::collections::HashMap<String, String>) -> Option<u64> {
+        let series_key = Self::encode_series_key(measurement, tags);
+        self.series_key_to_id.get(&series_key).copied()
     }
 }
 

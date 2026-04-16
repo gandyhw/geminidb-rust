@@ -42,6 +42,14 @@ impl SeriesIndex {
     pub fn clear(&mut self) {
         self.bitmap.clear();
     }
+
+    pub fn remove(&mut self, series_id: u64) -> bool {
+        self.bitmap.remove(series_id as u32)
+    }
+
+    pub fn get_all(&self) -> Vec<u64> {
+        self.bitmap.iter().map(|id| id as u64).collect()
+    }
 }
 
 impl Default for SeriesIndex {

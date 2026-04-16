@@ -1,6 +1,6 @@
 use crate::config::CompactionConfig;
-use crate::error::{Error, Result};
-use crate::tssp::{FileMeta, TsspReader, TsspWriter};
+use crate::error::Result;
+use crate::tssp::{FileMeta, TsspWriter};
 use crate::TsspConfig;
 use std::collections::HashMap;
 use std::path::PathBuf;

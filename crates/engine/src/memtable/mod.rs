@@ -130,4 +130,11 @@ impl MemTable {
 
         Ok(rows)
     }
+
+    pub fn clear(&mut self) -> Result<()> {
+        self.data.clear();
+        self.size.store(0, Ordering::Relaxed);
+        self.row_count.store(0, Ordering::Relaxed);
+        Ok(())
+    }
 }
