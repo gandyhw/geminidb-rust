@@ -5,17 +5,28 @@ use std::collections::HashMap;
 pub enum Statement {
     Select(SelectStatement),
     CreateDatabase(String),
+    CreateRetentionPolicy(CreateRetentionPolicy),
     DropDatabase(String),
     DropMeasurement(String),
     DropSeries(Option<String>),
     Delete,
     ShowDatabases,
     ShowMeasurements,
+    ShowRetentionPolicies(Option<String>),
     ShowTagKeys(Option<String>),
     ShowFieldKeys(Option<String>),
     ShowSeries,
     Use { database: String },
     Insert { measurement: String, tags: HashMap<String, String>, fields: HashMap<String, f64>, timestamp: Option<i64> },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct CreateRetentionPolicy {
+    pub name: String,
+    pub database: String,
+    pub duration_seconds: u64,
+    pub replica_count: u32,
+    pub default: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -159,6 +170,64 @@ impl Parser {
         None
     }
 
+    fn parse_word_not_empty(&mut self) -> Option<String> {
+        self.skip_whitespace();
+        let word = self.parse_word();
+        if word.is_empty() {
+            None
+        } else {
+            Some(word)
+        }
+    }
+
+    fn parse_number(&mut self) -> Option<f64> {
+        self.skip_whitespace();
+        let start = self.pos;
+        while let Some(ch) = self.peek() {
+            if ch.is_numeric() || ch == '.' {
+                self.pos += 1;
+            } else {
+                break;
+            }
+        }
+        if start < self.pos {
+            self.input[start..self.pos].parse().ok()
+        } else {
+            None
+        }
+    }
+
+    fn parse_duration(&mut self) -> u64 {
+        self.skip_whitespace();
+        if self.peek() == Some('=') {
+            self.pos += 1;
+        }
+        self.skip_whitespace();
+        
+        let start = self.pos;
+        while let Some(ch) = self.peek() {
+            if ch.is_numeric() {
+                self.pos += 1;
+            } else {
+                break;
+            }
+        }
+        
+        let num: u64 = self.input[start..self.pos].parse().unwrap_or(0);
+        
+        self.skip_whitespace();
+        let unit = self.parse_word().to_uppercase();
+        
+        match unit.as_str() {
+            "s" | "S" | "SEC" | "SECOND" | "SECONDS" => num,
+            "m" | "M" | "MIN" | "MINUTE" | "MINUTES" => num * 60,
+            "h" | "H" | "HR" | "HOUR" | "HOURS" => num * 3600,
+            "d" | "D" | "DAY" | "DAYS" => num * 86400,
+            "w" | "W" | "WK" | "WEEK" | "WEEKS" => num * 604800,
+            _ => num,
+        }
+    }
+
     pub fn parse_statement(&mut self) -> Option<Statement> {
         self.skip_whitespace();
         
@@ -235,6 +304,54 @@ impl Parser {
                     self.skip_whitespace();
                     let name = self.parse_identifier()?;
                     Some(Statement::CreateDatabase(name))
+                } else if next == "RETENTION" {
+                    self.skip_whitespace();
+                    let next = self.parse_word();
+                    if next == "POLICY" || next == "RP" {
+                        self.skip_whitespace();
+                        let rp_name = self.parse_identifier()?;
+                        self.skip_whitespace();
+                        
+                        let mut database = String::new();
+                        let mut duration_seconds = 3600 * 24 * 7;
+                        let mut replica_count = 1u32;
+                        let mut is_default = false;
+                        
+                        while let Some(word) = self.parse_word_not_empty() {
+                            match word.to_uppercase().as_str() {
+                                "ON" => {
+                                    database = self.parse_identifier()?;
+                                }
+                                "DURATION" => {
+                                    duration_seconds = self.parse_duration();
+                                }
+                                "REPLICATION" => {
+                                    self.skip_whitespace();
+                                    if self.peek() == Some('=') {
+                                        self.pos += 1;
+                                    }
+                                    self.skip_whitespace();
+                                    if let Some(n) = self.parse_number() {
+                                        replica_count = n as u32;
+                                    }
+                                }
+                                "DEFAULT" => {
+                                    is_default = true;
+                                }
+                                _ => {}
+                            }
+                        }
+                        
+                        Some(Statement::CreateRetentionPolicy(CreateRetentionPolicy {
+                            name: rp_name,
+                            database,
+                            duration_seconds,
+                            replica_count,
+                            default: is_default,
+                        }))
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
@@ -269,6 +386,20 @@ impl Parser {
                     "DATABASES" => Some(Statement::ShowDatabases),
                     "MEASUREMENTS" => Some(Statement::ShowMeasurements),
                     "SERIES" => Some(Statement::ShowSeries),
+                    "RETENTION" => {
+                        self.skip_whitespace();
+                        let next = self.parse_word();
+                        if next == "POLICIES" || next == "RP" {
+                            let database = self.parse_word();
+                            if database.is_empty() {
+                                Some(Statement::ShowRetentionPolicies(None))
+                            } else {
+                                Some(Statement::ShowRetentionPolicies(Some(database)))
+                            }
+                        } else {
+                            None
+                        }
+                    }
                     "TAG" => {
                         self.skip_whitespace();
                         let next = self.parse_word();

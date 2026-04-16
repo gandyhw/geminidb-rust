@@ -347,6 +347,25 @@ impl Engine {
         Ok(())
     }
 
+    pub fn create_retention_policy(&self, db_name: &str, name: &str, duration_seconds: u64, replica_count: u32) -> Result<()> {
+        let mut schema = self.schema.write().unwrap();
+        let rp = RetentionPolicy::new(name.to_string(), duration_seconds)
+            .with_replica_count(replica_count);
+        schema.create_retention_policy(db_name, rp)?;
+        Ok(())
+    }
+
+    pub fn get_retention_policies(&self, db_name: &str) -> Vec<(String, u64, u32)> {
+        let schema = self.schema.read().unwrap();
+        if let Some(db) = schema.databases.get(db_name) {
+            db.retention_policies.iter()
+                .map(|(name, rp)| (name.clone(), rp.duration_seconds, rp.replica_count))
+                .collect()
+        } else {
+            Vec::new()
+        }
+    }
+
     pub fn drop_database(&self, name: &str) -> Result<()> {
         let mut schema = self.schema.write().unwrap();
         if !schema.databases.contains_key(name) {

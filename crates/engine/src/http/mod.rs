@@ -307,6 +307,17 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
             }
             format_http_response(200, "OK", "{\"results\":[{\"success\":true}]}")
         }
+        crate::influxql::Statement::CreateRetentionPolicy(rp) => {
+            let mut guard = engine.write().unwrap();
+            let engine_guard = match guard.as_mut() {
+                Some(e) => e,
+                None => return format_http_response(500, "Internal Server Error", "Engine not initialized"),
+            };
+            if let Err(e) = engine_guard.create_retention_policy(&rp.database, &rp.name, rp.duration_seconds, rp.replica_count) {
+                return format_http_response(500, "Internal Server Error", &e.to_string());
+            }
+            format_http_response(200, "OK", "{\"results\":[{\"success\":true}]}")
+        }
         crate::influxql::Statement::DropDatabase(name) => {
             let mut guard = engine.write().unwrap();
             let engine_guard = match guard.as_mut() {
@@ -344,6 +355,24 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
             let series_count = engine_guard.get_series_count();
             let json = format!(r#"{{"results":[{{"series":[{{"name":"series","columns":["count"],"values":[["{series_count}"]]}}]}}]"}}"#, series_count = series_count);
             format_http_response(200, "OK", &json)
+        }
+        crate::influxql::Statement::ShowRetentionPolicies(db_name) => {
+            let guard = engine.read().unwrap();
+            let engine_guard = match guard.as_ref() {
+                Some(e) => e,
+                None => return format_http_response(500, "Internal Server Error", "Engine not initialized"),
+            };
+            let db = db_name.unwrap_or_else(|| "".to_string());
+            let policies = engine_guard.get_retention_policies(&db);
+            if policies.is_empty() {
+                format_http_response(200, "OK", "{\"results\":[{\"series\":[{\"name\":\"retentionPolicies\",\"values\":[]}]}]}")
+            } else {
+                let values: Vec<String> = policies.iter()
+                    .map(|(name, duration, replica)| format!(r#"["{}","{}","{}"]"#, name, duration, replica))
+                    .collect();
+                let values_json = values.join(",");
+                format_http_response(200, "OK", &format!("{{\"results\":[{{\"series\":[{{\"name\":\"retentionPolicies\",\"columns\":[\"name\",\"duration\",\"replicaCount\"],\"values\":[{}]}}]}}]}}", values_json))
+            }
         }
         crate::influxql::Statement::ShowDatabases => {
             let guard = engine.read().unwrap();
