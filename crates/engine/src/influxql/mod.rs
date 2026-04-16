@@ -14,6 +14,7 @@ pub enum Statement {
     ShowMeasurements,
     ShowRetentionPolicies(Option<String>),
     ShowTagKeys(Option<String>),
+    ShowTagValues(Option<String>, String),
     ShowFieldKeys(Option<String>),
     ShowSeries,
     Use { database: String },
@@ -406,6 +407,10 @@ impl Parser {
                         if next == "KEYS" {
                             let measurement = self.parse_show_tag_keys_measurement();
                             Some(Statement::ShowTagKeys(measurement))
+                        } else if next == "VALUES" {
+                            let measurement = self.parse_show_tag_keys_measurement();
+                            let tag_key = self.parse_identifier().unwrap_or_default();
+                            Some(Statement::ShowTagValues(measurement, tag_key))
                         } else {
                             None
                         }
@@ -597,6 +602,33 @@ mod tests {
                 assert_eq!(timestamp, Some(1234567890));
             }
             _ => panic!("expected Insert"),
+        }
+    }
+
+    #[test]
+    fn test_parse_show_tag_values() {
+        let mut parser = Parser::new("SHOW TAG VALUES FROM cpu");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            crate::influxql::Statement::ShowTagValues(measurement, tag_key) => {
+                assert_eq!(measurement, Some("cpu".to_string()));
+                assert_eq!(tag_key, "");
+            }
+            _ => panic!("expected ShowTagValues"),
+        }
+    }
+
+    #[test]
+    fn test_parse_show_tag_keys() {
+        let mut parser = Parser::new("SHOW TAG KEYS FROM cpu");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            crate::influxql::Statement::ShowTagKeys(measurement) => {
+                assert_eq!(measurement, Some("cpu".to_string()));
+            }
+            _ => panic!("expected ShowTagKeys"),
         }
     }
 }

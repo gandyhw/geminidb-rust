@@ -573,6 +573,37 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
                 format_http_response(200, "OK", &format!("{{\"results\":[{{\"series\":[{{\"name\":\"tagKeys\",\"values\":[{}]}}]}}]}}", values_json))
             }
         }
+        crate::influxql::Statement::ShowTagValues(measurement, tag_key) => {
+            let guard = engine.read().unwrap();
+            let engine_guard = match guard.as_ref() {
+                Some(e) => e,
+                None => return format_http_response(500, "Internal Server Error", "Engine not initialized"),
+            };
+            
+            let mut all_values: Vec<String> = Vec::new();
+            
+            if let Some(ref meas) = measurement {
+                if tag_key.is_empty() {
+                    for key in engine_guard.get_tag_keys(meas) {
+                        all_values.push(key);
+                    }
+                }
+            }
+            
+            let values: Vec<Vec<String>> = all_values.iter()
+                .map(|v| vec![v.clone()])
+                .collect();
+            
+            if values.is_empty() {
+                format_http_response(200, "OK", "{\"results\":[{\"series\":[{\"name\":\"tagValues\",\"values\":[]}]}]}")
+            } else {
+                let values_json: String = values.iter()
+                    .map(|row| format!("[{}]", row.iter().map(|s| format!("\"{}\"", s)).collect::<Vec<_>>().join(",")))
+                    .collect::<Vec<_>>()
+                    .join(",");
+                format_http_response(200, "OK", &format!("{{\"results\":[{{\"series\":[{{\"name\":\"tagValues\",\"values\":[{}]}}]}}]}}", values_json))
+            }
+        }
         crate::influxql::Statement::ShowFieldKeys(measurement) => {
             let guard = engine.read().unwrap();
             let engine_guard = match guard.as_ref() {
@@ -709,5 +740,37 @@ mod tests {
     fn test_http_server_creation() {
         let server = HttpServer::new(HttpConfig::default());
         assert!(!server.is_running());
+    }
+
+    #[test]
+    fn test_url_decode_simple() {
+        assert_eq!(url_decode("hello"), "hello");
+        assert_eq!(url_decode("hello%20world"), "hello world");
+        assert_eq!(url_decode("test%2Fpath"), "test/path");
+    }
+
+    #[test]
+    fn test_url_decode_plus() {
+        assert_eq!(url_decode("hello+world"), "hello world");
+    }
+
+    #[test]
+    fn test_convert_timestamp_ns() {
+        assert_eq!(convert_timestamp(1000000000, "ns"), 1000000000);
+    }
+
+    #[test]
+    fn test_convert_timestamp_us() {
+        assert_eq!(convert_timestamp(1000000, "us"), 1000);
+    }
+
+    #[test]
+    fn test_convert_timestamp_ms() {
+        assert_eq!(convert_timestamp(1000000000, "ms"), 1000);
+    }
+
+    #[test]
+    fn test_convert_timestamp_s() {
+        assert_eq!(convert_timestamp(1000000000, "s"), 1);
     }
 }
