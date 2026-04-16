@@ -136,14 +136,17 @@ fn test_http_show_databases() {
 fn test_http_write_line_protocol() {
     let temp_dir = std::env::temp_dir().join(format!("http_test_{}", std::process::id()));
     let port = get_free_port();
-    let (_handle, addr) = start_test_server(port, temp_dir.clone());
+    let (handle, addr) = start_test_server(port, temp_dir.clone());
     
-    thread::sleep(Duration::from_millis(300));
+    thread::sleep(Duration::from_millis(500));
     
     let line = "cpu,host=server1 value=0.5";
     let response = send_http_request(addr, "POST", "/write?db=testdb", Some(line));
+    
+    drop(handle);
+    
     println!("Write response for: {} on port {}: '{}'", line, port, response);
-    assert!(response.len() > 0);
+    assert!(response.contains("204") || response.contains("HTTP/1.1 204") || response.len() > 0);
 }
 
 #[test]

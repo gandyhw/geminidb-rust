@@ -69,7 +69,7 @@ impl HttpServer {
         }
     }
 
-    pub fn with_engine(mut self, engine: Engine) -> Self {
+    pub fn with_engine(self, engine: Engine) -> Self {
         *self.engine.write().unwrap() = Some(engine);
         self
     }
@@ -332,7 +332,6 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
     let stmt = {
         let first_line = lines.first().unwrap_or(&"");
         let mut query_str = String::new();
-        let mut db_name = String::new();
 
         if let Some(path_start) = first_line.find("/query") {
             let after_query = &first_line[path_start + 6..];
@@ -346,8 +345,6 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
                 let param_lower = param.to_lowercase();
                 if param_lower.starts_with("q=") {
                     query_str = url_decode(&param[2..]);
-                } else if param_lower.starts_with("db=") {
-                    db_name = url_decode(&param[3..]);
                 }
             }
         }
@@ -666,7 +663,6 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
         crate::influxql::Statement::Use { database } => {
             format_http_response(200, "OK", &format!("{{\"results\":[{{\"success\":true,\"database\":\"{}\"}}]}}", database))
         }
-        _ => format_http_response(501, "Not Implemented", "Query type not implemented"),
     }
 }
 

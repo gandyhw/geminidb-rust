@@ -789,10 +789,12 @@ impl TsspManager {
     }
 }
 
+#[allow(dead_code)]
 fn bytes_to_string(bytes: &[u8]) -> Result<String> {
     Ok(String::from_utf8(bytes.to_vec()).unwrap_or_default())
 }
 
+#[allow(dead_code)]
 fn bytes_to_i64(bytes: &[u8]) -> Result<i64> {
     let arr: [u8; 8] = bytes.try_into().map_err(|_| Error::InvalidArgument("invalid bytes".to_string()))?;
     Ok(i64::from_le_bytes(arr))

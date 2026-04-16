@@ -88,7 +88,7 @@ impl MergeTool {
         let mut result = MergeResult::new();
         result.input_files = candidate.files.clone();
 
-        let mut writer = TsspWriter::new(self.config.clone())?;
+        let writer = TsspWriter::new(self.config.clone())?;
 
         for file in &candidate.files {
             result.rows_merged += 1;

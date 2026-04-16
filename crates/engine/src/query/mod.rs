@@ -58,7 +58,7 @@ impl QueryExecutor {
         Self { schema }
     }
 
-    pub fn with_schema(mut schema: Schema) -> Self {
+    pub fn with_schema(schema: Schema) -> Self {
         Self { schema }
     }
 
@@ -77,14 +77,12 @@ impl QueryExecutor {
         Ok(())
     }
 
-    pub fn get_measurement_fields(&self, db_name: &str, measurement: &str) -> Result<Vec<String>> {
-        let db = self.schema.get_database(db_name)
+    pub fn get_measurement_fields(&self, db_name: &str, _measurement: &str) -> Result<Vec<String>> {
+        let _db = self.schema.get_database(db_name)
             .ok_or_else(|| crate::Error::Schema(format!("database {} not found", db_name)))?;
 
-        let rp = db.get_default_rp()
+        let _rp = _db.get_default_rp()
             .ok_or_else(|| crate::Error::Schema(format!("no default retention policy in database {}", db_name)))?;
-
-        drop(rp);
 
         Ok(vec!["_time".to_string(), "tag_*".to_string(), "field_*".to_string()])
     }
@@ -140,7 +138,7 @@ impl QueryExecutor {
         }
 
         let mut results = Vec::new();
-        for (key, group_rows) in groups {
+        for (_key, group_rows) in groups {
             let first_row = &group_rows[0];
             let mut aggregated_row = Row {
                 tags: first_row.tags.clone(),

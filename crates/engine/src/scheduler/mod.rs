@@ -12,6 +12,7 @@ pub enum TaskPriority {
 }
 
 impl TaskPriority {
+    #[allow(dead_code)]
     fn as_usize(&self) -> usize {
         match self {
             TaskPriority::High => 0,
@@ -120,6 +121,7 @@ impl TaskWrapper {
         }
     }
 
+    #[allow(dead_code)]
     fn should_run(&self) -> bool {
         if !self.task.enabled {
             return false;
@@ -149,6 +151,7 @@ impl TaskWrapper {
     }
 }
 
+#[allow(dead_code)]
 pub struct Scheduler {
     tasks: RwLock<HashMap<u64, TaskWrapper>>,
     executions: RwLock<Vec<TaskExecution>>,

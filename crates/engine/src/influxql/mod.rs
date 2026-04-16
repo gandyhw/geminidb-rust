@@ -57,6 +57,7 @@ impl Parser {
         self.input.chars().nth(self.pos)
     }
 
+    #[allow(dead_code)]
     fn advance(&mut self) -> Option<char> {
         if self.pos >= self.input.len() {
             None
@@ -108,6 +109,7 @@ impl Parser {
         None
     }
 
+    #[allow(dead_code)]
     fn parse_string_value(&mut self) -> Option<String> {
         self.skip_whitespace();
         let start = self.pos;
@@ -284,7 +286,7 @@ impl Parser {
             return self.parse_time_condition(condition);
         }
         
-        if let Some(pos) = condition.find(">=") {
+        if condition.find(">=").is_some() {
             let parts: Vec<&str> = condition.splitn(2, ">=").collect();
             if parts.len() == 2 {
                 let field = parts[0].trim().to_string();
@@ -295,7 +297,7 @@ impl Parser {
             }
         }
         
-        if let Some(pos) = condition.find("<=") {
+        if condition.find("<=").is_some() {
             let parts: Vec<&str> = condition.splitn(2, "<=").collect();
             if parts.len() == 2 {
                 let field = parts[0].trim().to_string();
@@ -306,7 +308,7 @@ impl Parser {
             }
         }
         
-        if let Some(pos) = condition.find('=') {
+        if condition.find('=').is_some() {
             let parts: Vec<&str> = condition.splitn(2, '=').collect();
             if parts.len() == 2 {
                 let field = parts[0].trim().to_string();
@@ -317,7 +319,7 @@ impl Parser {
             }
         }
         
-        if let Some(pos) = condition.find("!=") {
+        if condition.find("!=").is_some() {
             let parts: Vec<&str> = condition.splitn(2, "!=").collect();
             if parts.len() == 2 {
                 let field = parts[0].trim().to_string();
@@ -328,7 +330,7 @@ impl Parser {
             }
         }
         
-        if let Some(pos) = condition.find('>') {
+        if condition.find('>').is_some() {
             let parts: Vec<&str> = condition.splitn(2, '>').collect();
             if parts.len() == 2 {
                 let field = parts[0].trim().to_string();
@@ -339,7 +341,7 @@ impl Parser {
             }
         }
         
-        if let Some(pos) = condition.find('<') {
+        if condition.find('<').is_some() {
             let parts: Vec<&str> = condition.splitn(2, '<').collect();
             if parts.len() == 2 {
                 let field = parts[0].trim().to_string();
