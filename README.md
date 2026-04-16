@@ -17,7 +17,7 @@ A high-performance distributed time-series database written in Rust, inspired by
 | | `/write` endpoint (Line Protocol) | Done | 90% |
 | | `/query` endpoint (InfluxQL) | Done | 90% |
 | **InfluxQL Parser** | SELECT statement | Done | 90% |
-| | SHOW statements (8 types) | Done | 90% |
+| | SHOW statements (9 types) | Done | 90% |
 | | CREATE DATABASE | Done | 90% |
 | | CREATE RETENTION POLICY | Done | 90% |
 | | DROP DATABASE | Done | 90% |
@@ -55,6 +55,7 @@ influx -database=mydb -execute 'SELECT * FROM cpu'
 influx -database=mydb -execute 'SHOW MEASUREMENTS'
 influx -database=mydb -execute 'SHOW SERIES'
 influx -database=mydb -execute 'SHOW TAG KEYS FROM cpu'
+influx -database=mydb -execute 'SHOW TAG VALUES FROM cpu'
 influx -database=mydb -execute 'SHOW FIELD KEYS FROM cpu'
 ```
 

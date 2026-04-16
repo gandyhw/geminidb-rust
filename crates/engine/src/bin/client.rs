@@ -16,6 +16,7 @@ fn main() {
         println!("  show_measurements        - Show all measurements");
         println!("  show_series              - Show all series");
         println!("  show_tag_keys <meas>    - Show tag keys");
+        println!("  show_tag_values <meas>  - Show tag values");
         println!("  show_field_keys <meas>  - Show field keys");
         return;
     }
@@ -89,6 +90,17 @@ fn main() {
         "show_tag_keys" => {
             let measurement = if args.len() >= 3 { &args[2] } else { "" };
             let sql = format!("SHOW TAG KEYS FROM {}", measurement);
+            let encoded_sql = url_encode(&sql);
+            let request = format!(
+                "GET /query?q={}&db=_internal HTTP/1.1\r\nHost: localhost:8086\r\n\r\n",
+                encoded_sql
+            );
+            let response = send_request(&request, server_addr);
+            println!("{}", response);
+        }
+        "show_tag_values" => {
+            let measurement = if args.len() >= 3 { &args[2] } else { "" };
+            let sql = format!("SHOW TAG VALUES FROM {}", measurement);
             let encoded_sql = url_encode(&sql);
             let request = format!(
                 "GET /query?q={}&db=_internal HTTP/1.1\r\nHost: localhost:8086\r\n\r\n",
