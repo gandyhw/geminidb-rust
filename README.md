@@ -4,7 +4,7 @@ A high-performance distributed time-series database written in Rust, inspired by
 
 ## Project Status
 
-**Overall Completion: ~75%**
+**Overall Completion: ~80%**
 
 | Category | Feature | Status | Completion |
 |----------|---------|--------|------------|
@@ -29,8 +29,10 @@ A high-performance distributed time-series database written in Rust, inspired by
 | **Distributed** | Raft Consensus | Done | 80% |
 | | Sharding | Done | 70% |
 | **Compression** | Snappy/Zstd/LZ4 | Done | 90% |
+| **Binaries** | server binary | Done | 100% |
+| | client binary (testing) | Done | 100% |
 
-### CLI Compatibility: ~80%
+### CLI Compatibility: ~85%
 
 The following InfluxDB CLI commands are supported:
 
@@ -150,6 +152,25 @@ influx -database=mydb -execute 'SELECT * FROM cpu'
 
 # Show measurements
 influx -database=mydb -execute 'SHOW MEASUREMENTS'
+```
+
+### Using the Test Client
+
+For quick testing without InfluxDB CLI:
+
+```bash
+# Start the server first
+cargo run --bin server
+
+# In another terminal, use the client
+cargo run --bin client ping
+cargo run --bin client create_db testdb
+cargo run --bin client write "cpu,host=server1 value=0.5"
+cargo run --bin client query "SELECT * FROM cpu"
+cargo run --bin client show_dbs
+cargo run --bin client show_measurements
+cargo run --bin client show_tag_keys cpu
+cargo run --bin client show_field_keys cpu
 ```
 
 ### Programmatic Usage (Rust)
