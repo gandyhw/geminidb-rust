@@ -27,6 +27,10 @@ pub mod line_protocol;
 pub mod influxql;
 pub mod http;
 pub mod prometheus;
+pub mod otel;
+pub mod backup;
+pub mod syscontrol;
+pub mod arrow_flight;
 
 pub use config::{Config, EngineConfig, WalConfig, MemTableConfig, TsspConfig, CompactionConfig, CompressionType};
 pub use error::{Error, Result};
