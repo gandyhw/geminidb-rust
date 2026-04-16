@@ -51,7 +51,9 @@ influx -import -path=data.txt -database=mydb
 echo "cpu,host=server1 value=0.5" | influx -database=mydb -execute "INSERT"
 
 # Data querying
-influx -database=mydb -execute 'SELECT * FROM cpu'
+influx -database=mydb -execute 'SELECT * FROM cpu WHERE host = "server1"'
+influx -database=mydb -execute 'SELECT * FROM cpu WHERE value > 0.5'
+influx -database=mydb -execute 'SELECT * FROM cpu WHERE host = "server1" AND value > 0.5 LIMIT 10'
 influx -database=mydb -execute 'SHOW MEASUREMENTS'
 influx -database=mydb -execute 'SHOW SERIES'
 influx -database=mydb -execute 'SHOW TAG KEYS FROM cpu'
