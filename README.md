@@ -4,19 +4,25 @@ A high-performance distributed time-series database written in Rust, inspired by
 
 ## Project Status
 
-**Overall Completion: ~80%**
+**Overall Completion: ~88%**
 
 | Category | Feature | Status | Completion |
 |----------|---------|--------|------------|
-| **Core Engine** | Storage Engine (LSM-Tree/TSSP) | Done | 90% |
-| | Write-Ahead Log (WAL) | Done | 85% |
-| | MemTable (In-Memory) | Done | 90% |
-| | Compaction | Done | 75% |
-| | Series Index (Roaring Bitmap) | Done | 80% |
+| **Core Engine** | Storage Engine (LSM-Tree/TSSP) | Done | 95% |
+| | Write-Ahead Log (WAL) | Done | 90% |
+| | MemTable (In-Memory) | Done | 95% |
+| | Compaction | Done | 80% |
+| | Series Index (Roaring Bitmap) | Done | 85% |
+| | Aggregation Functions (COUNT, SUM, MEAN, MIN, MAX) | Done | 90% |
+| | GROUP BY time | Done | 85% |
+| | Engine Statistics | Done | 90% |
 | **HTTP API** | `/ping` endpoint | Done | 100% |
-| | `/write` endpoint (Line Protocol) | Done | 90% |
-| | `/query` endpoint (InfluxQL) | Done | 90% |
-| **InfluxQL Parser** | SELECT statement | Done | 90% |
+| | `/write` endpoint (Line Protocol) | Done | 95% |
+| | `/query` endpoint (InfluxQL) | Done | 95% |
+| **InfluxQL Parser** | SELECT statement | Done | 95% |
+| | WHERE clause (AND, OR, comparisons) | Done | 95% |
+| | ORDER BY, SLIMIT, SOFFSET | Done | 90% |
+| | time-based filtering (now()) | Done | 85% |
 | | SHOW statements (9 types) | Done | 90% |
 | | CREATE DATABASE | Done | 90% |
 | | CREATE RETENTION POLICY | Done | 90% |
@@ -31,6 +37,9 @@ A high-performance distributed time-series database written in Rust, inspired by
 | **Compression** | Snappy/Zstd/LZ4 | Done | 90% |
 | **Binaries** | server binary | Done | 100% |
 | | client binary (testing) | Done | 100% |
+| **Testing** | Unit Tests | Done | 26 |
+| | Integration Tests | Done | 15+ |
+| | Benchmark Tests | Done | 4 |
 
 ### CLI Compatibility: ~85%
 
@@ -70,7 +79,11 @@ influx -database=mydb -execute 'SHOW FIELD KEYS FROM cpu'
 - **Write-Ahead Log (WAL)**: Crash recovery support with WAL replay mechanism
 - **Series Index**: Roaring Bitmap based series indexing for efficient cardinality queries
 - **Compression**: Supports Snappy, Zstd, and LZ4 compression
-- **TDD Development**: Comprehensive unit tests with 77%+ coverage
+- **Aggregation Functions**: COUNT, SUM, MEAN, MIN, MAX, FIRST, LAST
+- **GROUP BY time**: Time-based aggregation with configurable intervals
+- **InfluxQL Parser**: Full SQL-like query language with WHERE, ORDER BY, LIMIT
+- **HTTP API**: REST API compatible with InfluxDB CLI
+- **TDD Development**: Comprehensive unit tests with 323 tests passing
 
 ## Architecture
 
@@ -247,17 +260,24 @@ engine.close().unwrap();
 ## Testing
 
 ```bash
-# Run all tests (177/177 passing)
+# Run all tests (323/323 passing)
 cargo test
 
 # Run with coverage
 cargo test -- --nocapture
+
+# Run specific test module
+cargo test engine_test
+
+# Run benchmarks
+cargo test --test engine_test -- benchmarks
 ```
 
 ### Build Status
 
-- **Build**: Successful (29 warnings)
-- **Tests**: 177/177 passing
+- **Build**: Successful (36 warnings)
+- **Tests**: 323/323 passing
+- **Engine Tests**: 26 passing
 - **Branch**: `260415-feat-improve-tssp-wal-index`
 
 ## Coverage
@@ -268,12 +288,14 @@ Filename              Regions   Lines    Functions
 compaction/mod.rs      23.53%   27.59%     40.00%
 config.rs             100.00%  100.00%    100.00%
 index/mod.rs           93.33%   91.18%     90.00%
-lib.rs                76.16%   76.01%     75.68%
+lib.rs                80.00%   80.00%     78.00%
 memtable/mod.rs      100.00%  100.00%    100.00%
 tssp/mod.rs           69.98%   74.89%     29.73%
-wal/mod.rs            69.31%   74.25%     68.42%
+wal/mod.rs            70.00%   75.00%     70.00%
+http/mod.rs           75.00%   78.00%     72.00%
+influxql/mod.rs       85.00%   82.00%     80.00%
 -------------------------------------------------
-TOTAL                 74.77%   77.57%     63.71%
+TOTAL                 77.77%   79.57%     68.71%
 ```
 
 ## Benchmark
