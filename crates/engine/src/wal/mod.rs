@@ -117,6 +117,16 @@ impl Wal {
         Ok(())
     }
 
+    pub fn len(&self) -> usize {
+        let entries = fs::read_dir(&self.dir).map(|e| e.count()).unwrap_or(0);
+        let current = self.current_file.lock();
+        if current.is_some() {
+            entries + 1
+        } else {
+            entries
+        }
+    }
+
     pub fn purge(&self, before_file_id: u64) -> Result<()> {
         let entries = fs::read_dir(&self.dir)?;
         for entry in entries.flatten() {

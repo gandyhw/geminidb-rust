@@ -216,6 +216,69 @@ impl Engine {
         })
     }
     
+    pub fn group_by_time(&self, rows: Vec<Row>, interval_ns: i64) -> Vec<Row> {
+        if rows.is_empty() || interval_ns <= 0 {
+            return rows;
+        }
+        
+        let mut grouped: std::collections::HashMap<i64, Vec<&Row>> = std::collections::HashMap::new();
+        
+        for row in &rows {
+            let bucket = (row.timestamp / interval_ns) * interval_ns;
+            grouped.entry(bucket).or_default().push(row);
+        }
+        
+        let mut result: Vec<Row> = grouped.into_iter().map(|(bucket, group_rows)| {
+            let mut aggregated_fields: std::collections::HashMap<String, FieldValue> = std::collections::HashMap::new();
+            
+            if let Some(first_row) = group_rows.first() {
+                for (key, value) in &first_row.fields {
+                    let mut sum_float = 0.0;
+                    let mut count = 0;
+                    let mut min_f: Option<f64> = None;
+                    let mut max_f: Option<f64> = None;
+                    
+                    for row in &group_rows {
+                        if let Some(fv) = row.fields.get(key) {
+                            if let Some(f) = fv.as_f64() {
+                                sum_float += f;
+                                count += 1;
+                                min_f = Some(min_f.map_or(f, |m| m.min(f)));
+                                max_f = Some(max_f.map_or(f, |m| m.max(f)));
+                            }
+                        }
+                    }
+                    
+                    if count > 0 {
+                        aggregated_fields.insert(key.clone(), FieldValue::Float(sum_float / count as f64));
+                    } else {
+                        aggregated_fields.insert(key.clone(), value.clone());
+                    }
+                }
+            }
+            
+            Row {
+                tags: std::collections::HashMap::new(),
+                fields: aggregated_fields,
+                timestamp: bucket,
+            }
+        }).collect();
+        
+        result.sort_by_key(|r| r.timestamp);
+        result
+    }
+    
+    pub fn get_stats(&self) -> EngineStats {
+        EngineStats {
+            series_count: self.series_index.len() as usize,
+            memtable_size: self.memtable.size(),
+            memtable_row_count: self.memtable.row_count(),
+            tssp_file_count: self.tssp_manager.get_file_count(),
+            wal_entries: self.wal.len(),
+            shard_count: self.shard_manager.shard_count(),
+        }
+    }
+    
     pub fn get_series_count(&self) -> usize {
         self.series_index.len() as usize
     }
@@ -716,6 +779,18 @@ pub enum FieldValue {
     Unsigned(u64),
 }
 
+impl FieldValue {
+    pub fn as_f64(&self) -> Option<f64> {
+        match self {
+            FieldValue::Float(v) => Some(*v),
+            FieldValue::Integer(v) => Some(*v as f64),
+            FieldValue::Unsigned(v) => Some(*v as f64),
+            FieldValue::String(s) => String::from_utf8_lossy(s).to_string().parse().ok(),
+            FieldValue::Boolean(b) => Some(if *b { 1.0 } else { 0.0 }),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Query {
     pub database: String,
@@ -828,6 +903,132 @@ pub struct QueryResult {
     pub stats: QueryStats,
 }
 
+impl QueryResult {
+    pub fn count(&self, field: &str) -> usize {
+        self.rows.iter().filter(|r| r.fields.contains_key(field)).count()
+    }
+    
+    pub fn sum(&self, field: &str) -> Option<FieldValue> {
+        let mut sum_float = 0.0;
+        let mut sum_int = 0i64;
+        let mut has_float = false;
+        
+        for row in &self.rows {
+            if let Some(v) = row.fields.get(field) {
+                match v {
+                    FieldValue::Float(f) => {
+                        sum_float += f;
+                        has_float = true;
+                    }
+                    FieldValue::Integer(i) => {
+                        sum_int += i;
+                    }
+                    FieldValue::Unsigned(u) => {
+                        sum_int += *u as i64;
+                    }
+                    _ => {}
+                }
+            }
+        }
+        
+        if has_float {
+            Some(FieldValue::Float(sum_float))
+        } else if sum_int != 0 {
+            Some(FieldValue::Integer(sum_int))
+        } else {
+            Some(FieldValue::Integer(0))
+        }
+    }
+    
+    pub fn mean(&self, field: &str) -> Option<f64> {
+        let mut count = 0;
+        let mut sum = 0.0;
+        
+        for row in &self.rows {
+            if let Some(v) = row.fields.get(field) {
+                if let Some(f) = v.as_f64() {
+                    sum += f;
+                    count += 1;
+                }
+            }
+        }
+        
+        if count > 0 {
+            Some(sum / count as f64)
+        } else {
+            None
+        }
+    }
+    
+    pub fn min(&self, field: &str) -> Option<FieldValue> {
+        let mut min_val: Option<FieldValue> = None;
+        
+        for row in &self.rows {
+            if let Some(v) = row.fields.get(field) {
+                match (&min_val, v) {
+                    (None, _) => min_val = Some(v.clone()),
+                    (Some(FieldValue::Float(m)), FieldValue::Float(f)) => {
+                        if f.lt(m) { min_val = Some(v.clone()); }
+                    }
+                    (Some(FieldValue::Integer(m)), FieldValue::Integer(i)) => {
+                        if i.lt(m) { min_val = Some(v.clone()); }
+                    }
+                    (Some(FieldValue::Unsigned(m)), FieldValue::Unsigned(u)) => {
+                        if u.lt(m) { min_val = Some(v.clone()); }
+                    }
+                    (Some(FieldValue::Float(m)), FieldValue::Integer(i)) => {
+                        if (*i as f64).lt(m) { min_val = Some(v.clone()); }
+                    }
+                    (Some(FieldValue::Integer(m)), FieldValue::Float(f)) => {
+                        if f.lt(&(*m as f64)) { min_val = Some(v.clone()); }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        
+        min_val
+    }
+    
+    pub fn max(&self, field: &str) -> Option<FieldValue> {
+        let mut max_val: Option<FieldValue> = None;
+        
+        for row in &self.rows {
+            if let Some(v) = row.fields.get(field) {
+                match (&max_val, v) {
+                    (None, _) => max_val = Some(v.clone()),
+                    (Some(FieldValue::Float(m)), FieldValue::Float(f)) => {
+                        if f.gt(m) { max_val = Some(v.clone()); }
+                    }
+                    (Some(FieldValue::Integer(m)), FieldValue::Integer(i)) => {
+                        if i.gt(m) { max_val = Some(v.clone()); }
+                    }
+                    (Some(FieldValue::Unsigned(m)), FieldValue::Unsigned(u)) => {
+                        if u.gt(m) { max_val = Some(v.clone()); }
+                    }
+                    (Some(FieldValue::Float(m)), FieldValue::Integer(i)) => {
+                        if (*i as f64).gt(m) { max_val = Some(v.clone()); }
+                    }
+                    (Some(FieldValue::Integer(m)), FieldValue::Float(f)) => {
+                        if f.gt(&(*m as f64)) { max_val = Some(v.clone()); }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        
+        max_val
+    }
+    
+    pub fn first(&self, field: &str) -> Option<FieldValue> {
+        self.rows.first().and_then(|r| r.fields.get(field).cloned())
+    }
+    
+    pub fn last(&self, field: &str) -> Option<FieldValue> {
+        self.rows.last().and_then(|r| r.fields.get(field).cloned())
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct QueryStats {
     pub files_read: usize,
@@ -835,4 +1036,14 @@ pub struct QueryStats {
     pub bytes_read: usize,
     pub execution_time_ms: u64,
     pub series_count: usize,
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct EngineStats {
+    pub series_count: usize,
+    pub memtable_size: u64,
+    pub memtable_row_count: u64,
+    pub tssp_file_count: usize,
+    pub wal_entries: usize,
+    pub shard_count: usize,
 }
