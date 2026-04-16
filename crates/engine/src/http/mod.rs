@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::io::{Read, Write as IoWrite};
-use std::time::{SystemTime, UNIX_EPOCH};
 use std::thread;
 use std::sync::{Arc, RwLock};
 
@@ -21,7 +20,7 @@ pub struct HttpConfig {
 impl Default for HttpConfig {
     fn default() -> Self {
         Self {
-            bind_addr: "127.0.0.1:8086".parse().unwrap(),
+            bind_addr: "0.0.0.0:8086".parse().unwrap(),
             read_timeout_secs: 30,
             write_timeout_secs: 30,
             max_connections: 100,
@@ -134,15 +133,31 @@ fn handle_connection(
     engine: &Arc<RwLock<Option<Engine>>>,
     version: &str,
 ) -> Result<()> {
-    let mut buffer = [0u8; 8192];
-    let n = stream.read(&mut buffer)
-        .map_err(|e| Error::InvalidArgument(format!("read error: {}", e)))?;
+    let mut buffer = Vec::new();
+    let mut tmp_buf = [0u8; 8192];
+    
+    loop {
+        let n = stream.read(&mut tmp_buf)
+            .map_err(|e| Error::InvalidArgument(format!("read error: {}", e)))?;
+        if n == 0 {
+            break;
+        }
+        buffer.extend_from_slice(&tmp_buf[..n]);
+        
+        if buffer.len() > 8192 * 4 {
+            break;
+        }
+        
+        if buffer.ends_with(b"\r\n\r\n") {
+            break;
+        }
+    }
 
-    if n == 0 {
+    if buffer.is_empty() {
         return Ok(());
     }
 
-    let request = String::from_utf8_lossy(&buffer[..n]).to_string();
+    let request = String::from_utf8_lossy(&buffer).to_string();
     let lines: Vec<&str> = request.lines().collect();
 
     if lines.is_empty() {
@@ -151,19 +166,21 @@ fn handle_connection(
 
     let first_line = lines[0].to_uppercase();
 
-    let response = if first_line.starts_with("GET /ping") {
+    let response = if first_line.starts_with("GET /PING") || first_line == "GET /PING" {
         let resp = PingResponse {
             status: "ok".to_string(),
             version: version.to_string(),
         };
         format_http_response(200, "OK", &serde_json::to_string(&resp).unwrap())
-    } else if first_line.starts_with("POST /write") || first_line.starts_with("GET /write") {
-        handle_write(&lines, engine)
-    } else if first_line.starts_with("POST /query") || first_line.starts_with("GET /query") {
+    } else if first_line.starts_with("POST /WRITE") || first_line.starts_with("GET /WRITE") {
+        handle_write(&lines, &buffer, engine)
+    } else if first_line.starts_with("POST /QUERY") || first_line.starts_with("GET /QUERY") {
         handle_query(&lines, engine)
     } else if first_line.starts_with("GET /") {
         let path = first_line.strip_prefix("GET ").unwrap_or("").split_whitespace().next().unwrap_or("");
-        if path == "/ping" {
+        if path == "/" || path.is_empty() {
+            format_http_response(200, "OK", "{\"status\": \"ok\"}")
+        } else if path == "/ping" {
             let resp = PingResponse {
                 status: "ok".to_string(),
                 version: version.to_string(),
@@ -184,34 +201,66 @@ fn handle_connection(
     Ok(())
 }
 
-fn handle_write(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String {
+fn handle_write(lines: &[&str], buffer: &[u8], engine: &Arc<RwLock<Option<Engine>>>) -> String {
     let mut binding = engine.write().unwrap();
     let engine_guard = match binding.as_mut() {
         Some(e) => e,
         None => return format_http_response(500, "Internal Server Error", "Engine not initialized"),
     };
 
-    let mut db_name = "".to_string();
+    let first_line = lines.first().unwrap_or(&"");
+    let mut db_name = String::new();
+    let mut precision = String::from("ns");
 
-    for line in lines {
-        if line.to_lowercase().starts_with("db=") {
-            db_name = line[3..].to_string();
+    if let Some(query_start) = first_line.find("/write") {
+        let after_write = &first_line[query_start + 6..];
+        if let Some(query_start) = after_write.find('?') {
+            let query_string = &after_write[query_start + 1..];
+            for param in query_string.split('&') {
+                let param_lower = param.to_lowercase();
+                if param_lower.starts_with("db=") {
+                    db_name = url_decode(&param[3..]);
+                } else if param_lower.starts_with("precision=") {
+                    precision = url_decode(&param[10..]);
+                }
+            }
         }
     }
 
     let parser = LineProtocolParser::new();
     let mut rows_written = 0;
+    let mut parse_errors = Vec::new();
 
-    for line in lines {
+    let body_start = if let Some(pos) = buffer.windows(4).position(|w| w == b"\r\n\r\n") {
+        pos + 4
+    } else {
+        0
+    };
+    let body = if body_start > 0 && body_start < buffer.len() {
+        String::from_utf8_lossy(&buffer[body_start..]).to_string()
+    } else {
+        String::new()
+    };
+
+    let lines_to_parse: Vec<&str> = if !body.is_empty() {
+        body.lines().collect()
+    } else {
+        lines.iter().skip(1).map(|s| *s).collect()
+    };
+
+    for (idx, line) in lines_to_parse.iter().enumerate() {
         let line = line.trim();
-        if line.is_empty() || line.starts_with('#') || line.starts_with("POST") || line.starts_with("GET") || line.starts_with("db=") || line.starts_with("precision=") || line.starts_with("Content-Type") || line.starts_with("Host") || line.starts_with("Connection") {
+        if line.is_empty() || line.starts_with('#') {
             continue;
         }
 
         match parser.parse(line) {
             Ok(parsed) => {
+                let timestamp = convert_timestamp(parsed.timestamp, &precision);
                 let table_name = parsed.measurement.clone();
-                let row = parsed.into_row();
+                let mut row = parsed.into_row();
+                row.timestamp = timestamp;
+                
                 let batch = WriteBatch {
                     database: db_name.clone(),
                     table: table_name,
@@ -224,50 +273,97 @@ fn handle_write(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
                 }
             }
             Err(e) => {
-                return format_http_response(400, "Bad Request", &format!("Parse error: {}", e));
+                parse_errors.push(format!("line {}: {}", idx + 1, e));
             }
         }
     }
 
+    if !parse_errors.is_empty() && rows_written == 0 {
+        let error_msg = parse_errors.join("; ");
+        return format_http_response(400, "Bad Request", &format!("{{\"error\":\"{}\"}}", error_msg));
+    }
+
     if rows_written > 0 {
         format_http_response(204, "No Content", "")
+    } else if parse_errors.is_empty() {
+        format_http_response(204, "No Content", "")
     } else {
-        format_http_response(500, "Internal Server Error", "Failed to write data")
+        format_http_response(500, "Internal Server Error", &format!("{{\"written\":{}}}", rows_written))
+    }
+}
+
+fn url_decode(s: &str) -> String {
+    let mut result = String::new();
+    let mut chars = s.chars().peekable();
+    while let Some(c) = chars.next() {
+        if c == '%' {
+            let hex: String = chars.by_ref().take(2).collect();
+            if hex.len() == 2 {
+                if let Ok(byte) = u8::from_str_radix(&hex, 16) {
+                    result.push(byte as char);
+                } else {
+                    result.push_str("%");
+                    result.push_str(&hex);
+                }
+            } else {
+                result.push('%');
+                result.push_str(&hex);
+            }
+        } else if c == '+' {
+            result.push(' ');
+        } else {
+            result.push(c);
+        }
+    }
+    result
+}
+
+fn convert_timestamp(ts: i64, precision: &str) -> i64 {
+    match precision {
+        "u" | "us" => ts / 1000,
+        "ms" => ts / 1_000_000,
+        "s" => ts / 1_000_000_000,
+        "m" => ts / (60 * 1_000_000_000),
+        "h" => ts / (3600 * 1_000_000_000),
+        _ => ts,
     }
 }
 
 fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String {
     let stmt = {
-        let mut db_name = "".to_string();
+        let first_line = lines.first().unwrap_or(&"");
         let mut query_str = String::new();
+        let mut db_name = String::new();
 
-        for line in lines {
-            let line = line.trim();
-            if line.to_lowercase().starts_with("db=") {
-                db_name = line[3..].to_string();
-            } else if line.to_lowercase().starts_with("q=") {
-                query_str = line[2..].to_string();
-            } else if line.starts_with("GET /query") || line.starts_with("POST /query") {
-                if let Some(pos) = line.find("q=") {
-                    let rest = &line[pos + 2..];
-                    if let Some(end) = rest.find('&') {
-                        query_str = rest[..end].to_string();
-                    } else {
-                        query_str = rest.trim().to_string();
-                    }
-                    query_str = query_str.replace("%22", "\"").replace("%20", " ");
+        if let Some(path_start) = first_line.find("/query") {
+            let after_query = &first_line[path_start + 6..];
+            let query_part = if let Some(pos) = after_query.find('?') {
+                &after_query[pos + 1..]
+            } else {
+                after_query
+            };
+            
+            for param in query_part.split('&') {
+                let param_lower = param.to_lowercase();
+                if param_lower.starts_with("q=") {
+                    query_str = url_decode(&param[2..]);
+                } else if param_lower.starts_with("db=") {
+                    db_name = url_decode(&param[3..]);
                 }
             }
         }
 
         if query_str.is_empty() {
-            return format_http_response(400, "Bad Request", "Missing query parameter");
+            return format_http_response(400, "Bad Request", "{\"error\":\"missing query parameter\"}");
         }
 
         let mut parser = Parser::new(&query_str);
         match parser.parse_statement() {
             Some(s) => s,
-            None => return format_http_response(400, "Bad Request", "Invalid query"),
+            None => {
+                let err = format!("{{\"error\":\"invalid query: {}\"}}", query_str);
+                return format_http_response(400, "Bad Request", &err);
+            }
         }
     };
 
@@ -314,6 +410,36 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
                 None => return format_http_response(500, "Internal Server Error", "Engine not initialized"),
             };
             if let Err(e) = engine_guard.create_retention_policy(&rp.database, &rp.name, rp.duration_seconds, rp.replica_count) {
+                return format_http_response(500, "Internal Server Error", &e.to_string());
+            }
+            format_http_response(200, "OK", "{\"results\":[{\"success\":true}]}")
+        }
+        crate::influxql::Statement::Insert { measurement, tags, fields, timestamp } => {
+            let mut guard = engine.write().unwrap();
+            let engine_guard = match guard.as_mut() {
+                Some(e) => e,
+                None => return format_http_response(500, "Internal Server Error", "Engine not initialized"),
+            };
+            
+            let fields_map: std::collections::HashMap<String, FieldValue> = fields
+                .into_iter()
+                .map(|(k, v)| (k, FieldValue::Float(v)))
+                .collect();
+            
+            let row = Row {
+                tags,
+                fields: fields_map,
+                timestamp: timestamp.unwrap_or(0),
+            };
+            
+            let batch = WriteBatch {
+                database: String::new(),
+                table: measurement,
+                rows: vec![row],
+                timestamp: 0,
+            };
+            
+            if let Err(e) = engine_guard.write(batch) {
                 return format_http_response(500, "Internal Server Error", &e.to_string());
             }
             format_http_response(200, "OK", "{\"results\":[{\"success\":true}]}")
@@ -568,7 +694,7 @@ mod tests {
     #[test]
     fn test_http_config_default() {
         let config = HttpConfig::default();
-        assert_eq!(config.bind_addr, "127.0.0.1:8086".parse().unwrap());
+        assert_eq!(config.bind_addr, "0.0.0.0:8086".parse().unwrap());
         assert_eq!(config.read_timeout_secs, 30);
     }
 
