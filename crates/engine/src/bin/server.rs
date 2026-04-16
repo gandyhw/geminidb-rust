@@ -44,6 +44,15 @@ fn main() {
         read_timeout_secs: 30,
         write_timeout_secs: 30,
         max_connections: 100,
+        max_concurrent_write_limit: 100,
+        max_concurrent_query_limit: 200,
+        max_enqueued_write_limit: 50,
+        max_enqueued_query_limit: 100,
+        write_request_rate_limit: 0.0,
+        query_request_rate_limit: 0.0,
+        cors_enabled: true,
+        auth_enabled: false,
+        compression_enabled: true,
     };
 
     let server = HttpServer::new(http_config).with_engine(engine);

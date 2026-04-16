@@ -41,6 +41,15 @@ fn start_test_server(port: u16, temp_dir: std::path::PathBuf) -> (thread::JoinHa
         read_timeout_secs: 5,
         write_timeout_secs: 5,
         max_connections: 10,
+        max_concurrent_write_limit: 10,
+        max_concurrent_query_limit: 20,
+        max_enqueued_write_limit: 5,
+        max_enqueued_query_limit: 10,
+        write_request_rate_limit: 0.0,
+        query_request_rate_limit: 0.0,
+        cors_enabled: true,
+        auth_enabled: false,
+        compression_enabled: false,
     };
     
     std::fs::create_dir_all(&temp_dir).unwrap();

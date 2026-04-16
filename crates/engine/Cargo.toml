@@ -15,6 +15,7 @@ lz4.workspace = true
 zstd.workspace = true
 snap.workspace = true
 lz4_flex.workspace = true
+flate2 = "1.0"
 
 crc32fast.workspace = true
 byteorder.workspace = true

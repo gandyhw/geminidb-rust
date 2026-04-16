@@ -3,11 +3,12 @@ use crate::line_protocol::LineProtocolParser;
 use crate::influxql::Parser;
 use crate::prometheus;
 use crate::{Engine, WriteBatch, Row, FieldValue, TimeRange, QueryRequest};
+use crate::syscontrol::SystemControls;
 use serde::{Deserialize, Serialize};
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::io::{Read, Write as IoWrite};
 use std::thread;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, RwLock, atomic::{AtomicUsize, Ordering}};
 
 #[derive(Debug, Clone)]
 pub struct HttpConfig {
@@ -15,6 +16,15 @@ pub struct HttpConfig {
     pub read_timeout_secs: u64,
     pub write_timeout_secs: u64,
     pub max_connections: usize,
+    pub max_concurrent_write_limit: usize,
+    pub max_concurrent_query_limit: usize,
+    pub max_enqueued_write_limit: usize,
+    pub max_enqueued_query_limit: usize,
+    pub write_request_rate_limit: f64,
+    pub query_request_rate_limit: f64,
+    pub cors_enabled: bool,
+    pub auth_enabled: bool,
+    pub compression_enabled: bool,
 }
 
 impl Default for HttpConfig {
@@ -24,6 +34,15 @@ impl Default for HttpConfig {
             read_timeout_secs: 30,
             write_timeout_secs: 30,
             max_connections: 100,
+            max_concurrent_write_limit: 100,
+            max_concurrent_query_limit: 200,
+            max_enqueued_write_limit: 50,
+            max_enqueued_query_limit: 100,
+            write_request_rate_limit: 0.0,
+            query_request_rate_limit: 0.0,
+            cors_enabled: true,
+            auth_enabled: false,
+            compression_enabled: true,
         }
     }
 }
@@ -58,6 +77,9 @@ pub struct HttpServer {
     engine: Arc<RwLock<Option<Engine>>>,
     running: Arc<RwLock<bool>>,
     version: String,
+    active_writes: AtomicUsize,
+    active_queries: AtomicUsize,
+    syscontrol: Arc<RwLock<Option<SystemControls>>>,
 }
 
 impl HttpServer {
@@ -67,6 +89,9 @@ impl HttpServer {
             engine: Arc::new(RwLock::new(None)),
             running: Arc::new(RwLock::new(false)),
             version: env!("CARGO_PKG_VERSION").to_string(),
+            active_writes: AtomicUsize::new(0),
+            active_queries: AtomicUsize::new(0),
+            syscontrol: Arc::new(RwLock::new(None)),
         }
     }
 
@@ -79,6 +104,32 @@ impl HttpServer {
         *self.engine.write().unwrap() = Some(engine);
     }
 
+    pub fn set_syscontrol(&self, syscontrol: SystemControls) {
+        *self.syscontrol.write().unwrap() = Some(syscontrol);
+    }
+
+    fn check_write_throttle(&self) -> Result<()> {
+        let active = self.active_writes.load(Ordering::Relaxed);
+        if active >= self.config.max_concurrent_write_limit {
+            return Err(Error::InvalidArgument("write throttle: too many concurrent writes".to_string()));
+        }
+        if active >= self.config.max_enqueued_write_limit {
+            return Err(Error::InvalidArgument("write throttle: write queue full".to_string()));
+        }
+        Ok(())
+    }
+
+    fn check_query_throttle(&self) -> Result<()> {
+        let active = self.active_queries.load(Ordering::Relaxed);
+        if active >= self.config.max_concurrent_query_limit {
+            return Err(Error::InvalidArgument("query throttle: too many concurrent queries".to_string()));
+        }
+        if active >= self.config.max_enqueued_query_limit {
+            return Err(Error::InvalidArgument("query throttle: query queue full".to_string()));
+        }
+        Ok(())
+    }
+
     pub fn start(&self) -> Result<()> {
         let listener = TcpListener::bind(self.config.bind_addr)
             .map_err(|e| Error::InvalidArgument(format!("failed to bind: {}", e)))?;
@@ -88,12 +139,14 @@ impl HttpServer {
         let running = self.running.clone();
         let engine = self.engine.clone();
         let version = self.version.clone();
+        let syscontrol = self.syscontrol.clone();
 
         thread::spawn(move || {
             for stream in listener.incoming() {
                 let running = running.clone();
                 let engine = engine.clone();
                 let version = version.clone();
+                let syscontrol = syscontrol.clone();
 
                 if !*running.read().unwrap() {
                     break;
@@ -103,7 +156,7 @@ impl HttpServer {
                     Ok(stream) => {
                         let addr = stream.peer_addr().unwrap_or_else(|_| "0.0.0.0:0".parse().unwrap());
                         thread::spawn(move || {
-                            if let Err(e) = handle_connection(stream, addr, &engine, &version) {
+                            if let Err(e) = handle_connection(stream, addr, &engine, &version, &syscontrol) {
                                 eprintln!("connection error: {}", e);
                             }
                         });
@@ -132,6 +185,7 @@ fn handle_connection(
     _addr: SocketAddr,
     engine: &Arc<RwLock<Option<Engine>>>,
     version: &str,
+    syscontrol: &Arc<RwLock<Option<SystemControls>>>,
 ) -> Result<()> {
     let mut buffer = Vec::new();
     let mut tmp_buf = [0u8; 8192];
@@ -191,6 +245,10 @@ fn handle_connection(
         handle_prometheus_query_range(&lines, engine)
     } else if first_line.starts_with("GET /METRICS") {
         handle_metrics(engine)
+    } else if first_line.starts_with("GET /STATUS") || first_line.starts_with("GET /STATUS ") {
+        handle_status(engine)
+    } else if first_line.starts_with("POST /DEBUG/CTRL") {
+        handle_debug_ctrl(body_part, syscontrol)
     } else if first_line.starts_with("GET /") {
         let path = first_line.strip_prefix("GET ").unwrap_or("").split_whitespace().next().unwrap_or("");
         if path == "/" || path.is_empty() {
@@ -850,6 +908,77 @@ fn handle_metrics(engine: &Arc<RwLock<Option<Engine>>>) -> String {
     buf.extend_from_slice(metrics.as_bytes());
     
     String::from_utf8_lossy(&buf).to_string()
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct StatusResponse {
+    status: String,
+    version: String,
+    series_count: usize,
+    memtable_size: u64,
+    tssp_file_count: usize,
+    shard_count: usize,
+}
+
+fn handle_status(engine: &Arc<RwLock<Option<Engine>>>) -> String {
+    let binding = engine.read().unwrap();
+    let engine_guard = match binding.as_ref() {
+        Some(e) => e,
+        None => return format_http_response(500, "Internal Server Error", "{{\"error\":\"Engine not initialized\"}}"),
+    };
+
+    let stats = engine_guard.get_stats();
+    let resp = StatusResponse {
+        status: "ok".to_string(),
+        version: env!("CARGO_PKG_VERSION").to_string(),
+        series_count: stats.series_count,
+        memtable_size: stats.memtable_size,
+        tssp_file_count: stats.tssp_file_count,
+        shard_count: stats.shard_count,
+    };
+
+    format_http_response(200, "OK", &serde_json::to_string(&resp).unwrap())
+}
+
+fn handle_debug_ctrl(body: &[u8], syscontrol: &Arc<RwLock<Option<SystemControls>>>) -> String {
+    let mut binding = match syscontrol.write() {
+        Ok(b) => b,
+        Err(_) => return format_http_response(500, "Internal Server Error", "{{\"error\":\"Lock poisoned\"}}"),
+    };
+    let syscontrol_guard = match binding.as_mut() {
+        Some(sc) => sc,
+        None => return format_http_response(500, "Internal Server Error", "{{\"error\":\"System controls not initialized\"}}"),
+    };
+
+    let body_str = String::from_utf8_lossy(body).to_string();
+    
+    #[derive(Deserialize)]
+    struct CtrlRequest {
+        command: String,
+        #[serde(default)]
+        switch_on: Option<String>,
+        #[serde(default)]
+        all_shards: Option<String>,
+        #[serde(default)]
+        duration: Option<String>,
+        #[serde(default)]
+        limit: Option<String>,
+    }
+
+    let req: CtrlRequest = match serde_json::from_str(&body_str) {
+        Ok(r) => r,
+        Err(e) => return format_http_response(400, "Bad Request", &format!("{{\"error\":\"Invalid JSON: {}\"}}", e)),
+    };
+
+    let params: Vec<(&str, &str)> = vec![
+        ("switchon", req.switch_on.as_deref().unwrap_or("")),
+        ("allshards", req.all_shards.as_deref().unwrap_or("")),
+        ("duration", req.duration.as_deref().unwrap_or("")),
+        ("limit", req.limit.as_deref().unwrap_or("")),
+    ].into_iter().filter(|(_, v)| !v.is_empty()).collect();
+
+    let response = syscontrol_guard.process_command(&req.command, &params);
+    format_http_response(200, "OK", &serde_json::to_string(&response).unwrap())
 }
 
 fn format_results(measurement: &str, fields: &[crate::influxql::Field], result: &crate::QueryResult) -> String {
