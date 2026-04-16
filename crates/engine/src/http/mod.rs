@@ -369,7 +369,14 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
 
     match stmt {
         crate::influxql::Statement::Select(select) => {
-            let query = QueryRequest::new(
+            let filter = if let Some(ref cond) = select.condition {
+                let mut parser = crate::influxql::Parser::new(cond);
+                parser.parse_condition(cond)
+            } else {
+                None
+            };
+            
+            let mut query = QueryRequest::new(
                 "".to_string(),
                 select.measurement.clone(),
                 TimeRange {
@@ -377,6 +384,10 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
                     end: i64::MAX,
                 },
             ).with_limit(select.limit.unwrap_or(1000));
+            
+            if let Some(f) = filter {
+                query = query.with_filter(f);
+            }
 
             let guard = engine.read().unwrap();
             let engine_guard = match guard.as_ref() {

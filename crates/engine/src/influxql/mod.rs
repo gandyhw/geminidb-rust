@@ -229,6 +229,131 @@ impl Parser {
         }
     }
 
+    pub fn parse_condition(&mut self, condition_str: &str) -> Option<crate::FilterExpr> {
+        let condition_str = condition_str.trim();
+        if condition_str.is_empty() {
+            return None;
+        }
+
+        let condition_lower = condition_str.to_lowercase();
+        
+        if let Some(pos) = condition_lower.find(" and ") {
+            let left = &condition_str[..pos];
+            let right = &condition_str[pos + 5..];
+            let left_expr = self.parse_single_condition(left.trim())?;
+            let right_expr = self.parse_single_condition(right.trim())?;
+            return Some(crate::FilterExpr::And(Box::new(left_expr), Box::new(right_expr)));
+        }
+        
+        if let Some(pos) = condition_lower.find(" or ") {
+            let left = &condition_str[..pos];
+            let right = &condition_str[pos + 4..];
+            let left_expr = self.parse_single_condition(left.trim())?;
+            let right_expr = self.parse_single_condition(right.trim())?;
+            return Some(crate::FilterExpr::Or(Box::new(left_expr), Box::new(right_expr)));
+        }
+        
+        self.parse_single_condition(condition_str)
+    }
+
+    fn parse_single_condition(&self, condition: &str) -> Option<crate::FilterExpr> {
+        let condition = condition.trim();
+        
+        if let Some(pos) = condition.find(">=") {
+            let parts: Vec<&str> = condition.splitn(2, ">=").collect();
+            if parts.len() == 2 {
+                let field = parts[0].trim().to_string();
+                let value_str = parts[1].trim();
+                if let Some(value) = self.parse_value(value_str) {
+                    return Some(crate::FilterExpr::Gte(field, value));
+                }
+            }
+        }
+        
+        if let Some(pos) = condition.find("<=") {
+            let parts: Vec<&str> = condition.splitn(2, "<=").collect();
+            if parts.len() == 2 {
+                let field = parts[0].trim().to_string();
+                let value_str = parts[1].trim();
+                if let Some(value) = self.parse_value(value_str) {
+                    return Some(crate::FilterExpr::Lte(field, value));
+                }
+            }
+        }
+        
+        if let Some(pos) = condition.find('=') {
+            let parts: Vec<&str> = condition.splitn(2, '=').collect();
+            if parts.len() == 2 {
+                let field = parts[0].trim().to_string();
+                let value_str = parts[1].trim();
+                if let Some(value) = self.parse_value(value_str) {
+                    return Some(crate::FilterExpr::Eq(field, value));
+                }
+            }
+        }
+        
+        if let Some(pos) = condition.find("!=") {
+            let parts: Vec<&str> = condition.splitn(2, "!=").collect();
+            if parts.len() == 2 {
+                let field = parts[0].trim().to_string();
+                let value_str = parts[1].trim();
+                if let Some(value) = self.parse_value(value_str) {
+                    return Some(crate::FilterExpr::Ne(field, value));
+                }
+            }
+        }
+        
+        if let Some(pos) = condition.find('>') {
+            let parts: Vec<&str> = condition.splitn(2, '>').collect();
+            if parts.len() == 2 {
+                let field = parts[0].trim().to_string();
+                let value_str = parts[1].trim();
+                if let Some(value) = self.parse_value(value_str) {
+                    return Some(crate::FilterExpr::Gt(field, value));
+                }
+            }
+        }
+        
+        if let Some(pos) = condition.find('<') {
+            let parts: Vec<&str> = condition.splitn(2, '<').collect();
+            if parts.len() == 2 {
+                let field = parts[0].trim().to_string();
+                let value_str = parts[1].trim();
+                if let Some(value) = self.parse_value(value_str) {
+                    return Some(crate::FilterExpr::Lt(field, value));
+                }
+            }
+        }
+        
+        None
+    }
+
+    fn parse_value(&self, value_str: &str) -> Option<crate::FieldValue> {
+        let value_str = value_str.trim();
+        
+        if value_str.eq_ignore_ascii_case("true") {
+            return Some(crate::FieldValue::Boolean(true));
+        }
+        if value_str.eq_ignore_ascii_case("false") {
+            return Some(crate::FieldValue::Boolean(false));
+        }
+        
+        if let Ok(i) = value_str.parse::<i64>() {
+            return Some(crate::FieldValue::Integer(i));
+        }
+        
+        if let Ok(f) = value_str.parse::<f64>() {
+            return Some(crate::FieldValue::Float(f));
+        }
+        
+        if (value_str.starts_with('\'') && value_str.ends_with('\'')) ||
+           (value_str.starts_with('"') && value_str.ends_with('"')) {
+            return Some(crate::FieldValue::String(value_str[1..value_str.len()-1].as_bytes().to_vec()));
+        }
+        
+        Some(crate::FieldValue::String(value_str.as_bytes().to_vec()))
+    }
+
     pub fn parse_statement(&mut self) -> Option<Statement> {
         self.skip_whitespace();
         
@@ -629,6 +754,62 @@ mod tests {
                 assert_eq!(measurement, Some("cpu".to_string()));
             }
             _ => panic!("expected ShowTagKeys"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_where() {
+        let mut parser = Parser::new("SELECT * FROM cpu WHERE host = 'server1'");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::Select(s) => {
+                assert_eq!(s.measurement, "cpu");
+                assert!(s.condition.is_some());
+                let cond = s.condition.unwrap();
+                assert!(cond.contains("host"));
+                assert!(cond.contains("="));
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_parse_condition_eq() {
+        let mut parser = Parser::new("");
+        let filter = parser.parse_condition("host = 'server1'");
+        assert!(filter.is_some());
+        match filter.unwrap() {
+            crate::FilterExpr::Eq(field, value) => {
+                assert_eq!(field, "host");
+                assert_eq!(value, crate::FieldValue::String("server1".as_bytes().to_vec()));
+            }
+            _ => panic!("expected Eq"),
+        }
+    }
+
+    #[test]
+    fn test_parse_condition_gt() {
+        let mut parser = Parser::new("");
+        let filter = parser.parse_condition("value > 100");
+        assert!(filter.is_some());
+        match filter.unwrap() {
+            crate::FilterExpr::Gt(field, value) => {
+                assert_eq!(field, "value");
+                assert_eq!(value, crate::FieldValue::Integer(100));
+            }
+            _ => panic!("expected Gt"),
+        }
+    }
+
+    #[test]
+    fn test_parse_condition_and() {
+        let mut parser = Parser::new("");
+        let filter = parser.parse_condition("host = 'server1' AND value > 100");
+        assert!(filter.is_some());
+        match filter.unwrap() {
+            crate::FilterExpr::And(_, _) => {}
+            _ => panic!("expected And"),
         }
     }
 }

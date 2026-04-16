@@ -334,8 +334,8 @@ impl Engine {
             database: request.database,
             table: request.measurement,
             time_range: request.time_range,
-            columns: vec![],
-            filter: None,
+            columns: request.selected_fields,
+            filter: request.filter,
             limit: request.limit,
         };
         let result = self.read(query)?;
