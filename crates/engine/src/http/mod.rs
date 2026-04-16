@@ -379,6 +379,10 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
             if let Some(f) = filter {
                 query = query.with_filter(f);
             }
+            
+            if !select.group_by.is_empty() {
+                query = query.with_group_by(select.group_by.clone());
+            }
 
             let guard = engine.read().unwrap();
             let engine_guard = match guard.as_ref() {
@@ -387,8 +391,8 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
             };
 
             match engine_guard.query(query) {
-                Ok(rows) => {
-                    let result_str = format_results(&select.measurement, &select.fields, &rows);
+                Ok(result) => {
+                    let result_str = format_results(&select.measurement, &select.fields, &result);
                     format_http_response(200, "OK", &result_str)
                 }
                 Err(e) => format_http_response(500, "Internal Server Error", &e.to_string()),
@@ -685,32 +689,110 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
     }
 }
 
-fn format_results(measurement: &str, fields: &[String], rows: &[Row]) -> String {
+fn format_results(measurement: &str, fields: &[crate::influxql::Field], result: &crate::QueryResult) -> String {
     let mut values = Vec::new();
-    for row in rows {
+    
+    let has_aggregates = fields.iter().any(|f| matches!(f, crate::influxql::Field::Aggregate(_)));
+    
+    if has_aggregates {
         let mut row_values = Vec::new();
-        row_values.push(row.timestamp.to_string());
+        row_values.push("0".to_string());
         for field in fields {
-            if *field == "*" {
-                for (_, v) in &row.fields {
-                    row_values.push(field_value_to_string(v));
+            match field {
+                crate::influxql::Field::Raw(name) => {
+                    if *name == "*" {
+                        let first_row = result.rows.first();
+                        if let Some(row) = first_row {
+                            for (_, v) in &row.fields {
+                                row_values.push(field_value_to_string(v));
+                            }
+                        }
+                    } else {
+                        let first_row = result.rows.first();
+                        if let Some(row) = first_row {
+                            if let Some(v) = row.fields.get(name) {
+                                row_values.push(field_value_to_string(v));
+                            } else {
+                                row_values.push("".to_string());
+                            }
+                        } else {
+                            row_values.push("".to_string());
+                        }
+                    }
                 }
-            } else {
-                if let Some(v) = row.fields.get(field) {
-                    row_values.push(field_value_to_string(v));
-                } else {
-                    row_values.push("".to_string());
+                crate::influxql::Field::Aggregate(func) => {
+                    let aggregate_value = match func {
+                        crate::influxql::AggregateFunc::Count(None) => {
+                            FieldValue::Integer(result.rows.len() as i64)
+                        }
+                        crate::influxql::AggregateFunc::Count(Some(field_name)) => {
+                            FieldValue::Integer(result.count(field_name) as i64)
+                        }
+                        crate::influxql::AggregateFunc::Sum(field_name) => {
+                            result.sum(field_name).unwrap_or(FieldValue::Integer(0))
+                        }
+                        crate::influxql::AggregateFunc::Mean(field_name) => {
+                            if let Some(mean) = result.mean(field_name) {
+                                FieldValue::Float(mean)
+                            } else {
+                                FieldValue::Float(0.0)
+                            }
+                        }
+                        crate::influxql::AggregateFunc::Min(field_name) => {
+                            result.min(field_name).unwrap_or(FieldValue::Integer(0))
+                        }
+                        crate::influxql::AggregateFunc::Max(field_name) => {
+                            result.max(field_name).unwrap_or(FieldValue::Integer(0))
+                        }
+                        crate::influxql::AggregateFunc::First(field_name) => {
+                            result.first(field_name).unwrap_or(FieldValue::Integer(0))
+                        }
+                        crate::influxql::AggregateFunc::Last(field_name) => {
+                            result.last(field_name).unwrap_or(FieldValue::Integer(0))
+                        }
+                    };
+                    row_values.push(field_value_to_string(&aggregate_value));
                 }
             }
         }
         values.push(format!("[{}]", row_values.iter().map(|s| format!("\"{}\"", s)).collect::<Vec<_>>().join(",")));
+    } else {
+        for row in &result.rows {
+            let mut row_values = Vec::new();
+            row_values.push(row.timestamp.to_string());
+            for field in fields {
+                match field {
+                    crate::influxql::Field::Raw(name) => {
+                        if *name == "*" {
+                            for (_, v) in &row.fields {
+                                row_values.push(field_value_to_string(v));
+                            }
+                        } else {
+                            if let Some(v) = row.fields.get(name) {
+                                row_values.push(field_value_to_string(v));
+                            } else {
+                                row_values.push("".to_string());
+                            }
+                        }
+                    }
+                    crate::influxql::Field::Aggregate(_) => {}
+                }
+            }
+            values.push(format!("[{}]", row_values.iter().map(|s| format!("\"{}\"", s)).collect::<Vec<_>>().join(",")));
+        }
     }
 
-    let columns = if fields.iter().any(|f| *f == "*") {
+    let columns = if fields.iter().any(|f| matches!(f, crate::influxql::Field::Raw(name) if name == "*")) {
         vec!["time".to_string()]
     } else {
         let mut cols = vec!["time".to_string()];
-        cols.extend(fields.iter().cloned());
+        for f in fields {
+            let name = match f {
+                crate::influxql::Field::Raw(name) => name.clone(),
+                crate::influxql::Field::Aggregate(func) => format!("{:?}", func),
+            };
+            cols.push(name);
+        }
         cols
     };
 

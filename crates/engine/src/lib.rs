@@ -402,7 +402,7 @@ impl Engine {
             .unwrap_or_default()
     }
 
-    pub fn query(&self, request: QueryRequest) -> Result<Vec<Row>> {
+    pub fn query(&self, request: QueryRequest) -> Result<QueryResult> {
         let query = Query {
             database: request.database,
             table: request.measurement,
@@ -412,7 +412,7 @@ impl Engine {
             limit: request.limit,
         };
         let result = self.read(query)?;
-        Ok(result.rows)
+        Ok(result)
     }
 
     pub fn create_database(&self, name: &str) -> Result<()> {

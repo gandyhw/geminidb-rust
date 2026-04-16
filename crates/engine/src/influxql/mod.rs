@@ -62,10 +62,28 @@ pub struct CreateRetentionPolicy {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum AggregateFunc {
+    Count(Option<String>),
+    Sum(String),
+    Mean(String),
+    Min(String),
+    Max(String),
+    First(String),
+    Last(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Field {
+    Raw(String),
+    Aggregate(AggregateFunc),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct SelectStatement {
-    pub fields: Vec<String>,
+    pub fields: Vec<Field>,
     pub measurement: String,
     pub condition: Option<String>,
+    pub group_by: Vec<String>,
     pub limit: Option<usize>,
     pub slimit: Option<usize>,
     pub soffset: Option<usize>,
@@ -157,6 +175,71 @@ impl Parser {
         } else {
             None
         }
+    }
+
+    fn parse_field_expr(&mut self) -> Option<Field> {
+        self.skip_whitespace();
+        let start_pos = self.pos;
+        let word = self.parse_word();
+        
+        if word.is_empty() {
+            return None;
+        }
+        
+        let upper_word = word.to_uppercase();
+        if upper_word == "COUNT" || upper_word == "SUM" || upper_word == "MEAN" || 
+           upper_word == "MIN" || upper_word == "MAX" || upper_word == "FIRST" || upper_word == "LAST" {
+            self.skip_whitespace();
+            if self.peek() == Some('(') {
+                self.pos += 1;
+                self.skip_whitespace();
+                
+                if upper_word == "COUNT" && self.peek() == Some('*') {
+                    self.pos += 1;
+                    self.skip_whitespace();
+                    if self.peek() == Some(')') {
+                        self.pos += 1;
+                        return Some(Field::Aggregate(AggregateFunc::Count(None)));
+                    }
+                    self.pos = start_pos;
+                    return None;
+                }
+                
+                let inner = self.parse_word();
+                if inner.is_empty() {
+                    self.pos = start_pos;
+                    return None;
+                }
+                self.skip_whitespace();
+                if self.peek() == Some(')') {
+                    self.pos += 1;
+                    let func = match upper_word.as_str() {
+                        "COUNT" => AggregateFunc::Count(Some(inner)),
+                        "SUM" => AggregateFunc::Sum(inner),
+                        "MEAN" => AggregateFunc::Mean(inner),
+                        "MIN" => AggregateFunc::Min(inner),
+                        "MAX" => AggregateFunc::Max(inner),
+                        "FIRST" => AggregateFunc::First(inner),
+                        "LAST" => AggregateFunc::Last(inner),
+                        _ => {
+                            self.pos = start_pos;
+                            return None;
+                        }
+                    };
+                    return Some(Field::Aggregate(func));
+                }
+            }
+            self.pos = start_pos;
+            return None;
+        }
+        
+        let keywords = ["FROM", "WHERE", "LIMIT", "ORDER", "SLIMIT", "SOFFSET", "GROUP", "OFFSET"];
+        if keywords.iter().any(|k| upper_word == *k) {
+            self.pos = start_pos;
+            return None;
+        }
+        
+        Some(Field::Raw(word))
     }
 
     fn parse_field_value(&mut self) -> Option<f64> {
@@ -502,18 +585,17 @@ impl Parser {
                 self.skip_whitespace();
                 let mut fields = Vec::new();
                 loop {
-                    let field = self.parse_word();
-                    if field.is_empty() || field == "FROM" {
-                        if field == "FROM" {
-                            self.pos -= 4; // put back "FROM"
-                        }
+                    let field = self.parse_field_expr();
+                    if field.is_none() {
                         break;
                     }
-                    fields.push(field);
+                    fields.push(field.unwrap());
                     self.skip_whitespace();
                     if self.peek() == Some(',') {
                         self.pos += 1;
                         self.skip_whitespace();
+                    } else {
+                        break;
                     }
                 }
                 
@@ -528,6 +610,7 @@ impl Parser {
                 let mut slimit = None;
                 let mut soffset = None;
                 let mut order_by = None;
+                let mut group_by = Vec::new();
                 
                 loop {
                     self.skip_whitespace();
@@ -561,6 +644,28 @@ impl Parser {
                                 order_by = Some(self.parse_word());
                             }
                         }
+                        "GROUP" => {
+                            self.skip_whitespace();
+                            let by = self.parse_word();
+                            if by.to_uppercase() == "BY" {
+                                self.skip_whitespace();
+                                loop {
+                                    let tag = self.parse_identifier();
+                                    if let Some(t) = tag {
+                                        group_by.push(t);
+                                        self.skip_whitespace();
+                                        if self.peek() == Some(',') {
+                                            self.pos += 1;
+                                            self.skip_whitespace();
+                                        } else {
+                                            break;
+                                        }
+                                    } else {
+                                        break;
+                                    }
+                                }
+                            }
+                        }
                         "" => break,
                         _ => {
                             if self.pos < self.input.len() {
@@ -575,6 +680,7 @@ impl Parser {
                     fields,
                     measurement,
                     condition,
+                    group_by,
                     limit,
                     slimit,
                     soffset,
@@ -912,7 +1018,7 @@ mod tests {
         match stmt {
             Statement::Select(s) => {
                 assert_eq!(s.measurement, "cpu");
-                assert!(s.fields.contains(&"*".to_string()));
+                assert!(s.fields.contains(&Field::Raw("*".to_string())));
             }
             _ => panic!("expected Select"),
         }
@@ -927,6 +1033,8 @@ mod tests {
             Statement::Select(s) => {
                 assert_eq!(s.measurement, "cpu");
                 assert_eq!(s.fields.len(), 2);
+                assert!(matches!(s.fields.get(0), Some(Field::Raw(n)) if n == "USAGE"));
+                assert!(matches!(s.fields.get(1), Some(Field::Raw(n)) if n == "TEMPERATURE"));
             }
             _ => panic!("expected Select"),
         }
@@ -1168,6 +1276,211 @@ mod tests {
                 assert!(condition.is_some());
             }
             _ => panic!("expected Delete"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_count() {
+        let mut parser = Parser::new("SELECT COUNT(value) FROM cpu");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::Select(s) => {
+                assert_eq!(s.measurement, "cpu");
+                assert_eq!(s.fields.len(), 1);
+                assert!(matches!(s.fields.get(0), Some(Field::Aggregate(AggregateFunc::Count(Some(n)))) if n == "VALUE"));
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_count_star() {
+        let mut parser = Parser::new("SELECT COUNT(*) FROM cpu");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::Select(s) => {
+                assert_eq!(s.measurement, "cpu");
+                assert_eq!(s.fields.len(), 1);
+                assert!(matches!(s.fields.get(0), Some(Field::Aggregate(AggregateFunc::Count(None)))));
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_sum() {
+        let mut parser = Parser::new("SELECT SUM(value) FROM cpu");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::Select(s) => {
+                assert_eq!(s.measurement, "cpu");
+                assert_eq!(s.fields.len(), 1);
+                assert!(matches!(s.fields.get(0), Some(Field::Aggregate(AggregateFunc::Sum(n))) if n == "VALUE"));
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_mean() {
+        let mut parser = Parser::new("SELECT MEAN(value) FROM cpu");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::Select(s) => {
+                assert_eq!(s.measurement, "cpu");
+                assert_eq!(s.fields.len(), 1);
+                assert!(matches!(s.fields.get(0), Some(Field::Aggregate(AggregateFunc::Mean(n))) if n == "VALUE"));
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_min() {
+        let mut parser = Parser::new("SELECT MIN(value) FROM cpu");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::Select(s) => {
+                assert_eq!(s.measurement, "cpu");
+                assert_eq!(s.fields.len(), 1);
+                assert!(matches!(s.fields.get(0), Some(Field::Aggregate(AggregateFunc::Min(n))) if n == "VALUE"));
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_max() {
+        let mut parser = Parser::new("SELECT MAX(value) FROM cpu");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::Select(s) => {
+                assert_eq!(s.measurement, "cpu");
+                assert_eq!(s.fields.len(), 1);
+                assert!(matches!(s.fields.get(0), Some(Field::Aggregate(AggregateFunc::Max(n))) if n == "VALUE"));
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_first() {
+        let mut parser = Parser::new("SELECT FIRST(value) FROM cpu");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::Select(s) => {
+                assert_eq!(s.measurement, "cpu");
+                assert_eq!(s.fields.len(), 1);
+                assert!(matches!(s.fields.get(0), Some(Field::Aggregate(AggregateFunc::First(n))) if n == "VALUE"));
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_last() {
+        let mut parser = Parser::new("SELECT LAST(value) FROM cpu");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::Select(s) => {
+                assert_eq!(s.measurement, "cpu");
+                assert_eq!(s.fields.len(), 1);
+                assert!(matches!(s.fields.get(0), Some(Field::Aggregate(AggregateFunc::Last(n))) if n == "VALUE"));
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_multiple_aggregates() {
+        let mut parser = Parser::new("SELECT COUNT(value), SUM(value), MEAN(value) FROM cpu");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::Select(s) => {
+                assert_eq!(s.measurement, "cpu");
+                assert_eq!(s.fields.len(), 3);
+                assert!(matches!(s.fields.get(0), Some(Field::Aggregate(AggregateFunc::Count(Some(n)))) if n == "VALUE"));
+                assert!(matches!(s.fields.get(1), Some(Field::Aggregate(AggregateFunc::Sum(n))) if n == "VALUE"));
+                assert!(matches!(s.fields.get(2), Some(Field::Aggregate(AggregateFunc::Mean(n))) if n == "VALUE"));
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_raw_and_aggregate() {
+        let mut parser = Parser::new("SELECT host, COUNT(value) FROM cpu");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::Select(s) => {
+                assert_eq!(s.measurement, "cpu");
+                assert_eq!(s.fields.len(), 2);
+                match s.fields.get(0) {
+                    Some(Field::Raw(n)) => assert_eq!(n, "HOST"),
+                    _ => panic!("expected Raw field"),
+                }
+                match s.fields.get(1) {
+                    Some(Field::Aggregate(AggregateFunc::Count(Some(n)))) => assert_eq!(n, "VALUE"),
+                    _ => panic!("expected Count aggregate"),
+                }
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_count_with_where() {
+        let mut parser = Parser::new("SELECT COUNT(value) FROM cpu WHERE host = 'server1'");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::Select(s) => {
+                assert_eq!(s.measurement, "cpu");
+                assert_eq!(s.fields.len(), 1);
+                assert!(matches!(s.fields.get(0), Some(Field::Aggregate(AggregateFunc::Count(Some(n)))) if n == "VALUE"));
+                assert!(s.condition.is_some());
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_group_by() {
+        let mut parser = Parser::new("SELECT COUNT(value) FROM cpu GROUP BY host");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::Select(s) => {
+                assert_eq!(s.measurement, "cpu");
+                assert_eq!(s.fields.len(), 1);
+                assert!(matches!(s.fields.get(0), Some(Field::Aggregate(AggregateFunc::Count(Some(n)))) if n == "VALUE"));
+                assert_eq!(s.group_by, vec!["host"]);
+            }
+            _ => panic!("expected Select"),
+        }
+    }
+
+    #[test]
+    fn test_parse_select_with_group_by_multiple_tags() {
+        let mut parser = Parser::new("SELECT COUNT(value) FROM cpu GROUP BY host, region");
+        let stmt = parser.parse_statement().unwrap();
+        
+        match stmt {
+            Statement::Select(s) => {
+                assert_eq!(s.measurement, "cpu");
+                assert_eq!(s.group_by, vec!["host", "region"]);
+            }
+            _ => panic!("expected Select"),
         }
     }
 }

@@ -252,3 +252,33 @@ fn test_http_delete() {
     let response = send_http_request(addr, "GET", &format!("/query?{}", query), None);
     assert!(response.contains("200 OK") || response.contains("HTTP/1.1 200") || response.contains("success"));
 }
+
+#[test]
+fn test_http_query_select_with_count() {
+    let temp_dir = std::env::temp_dir().join(format!("http_test_{}", std::process::id()));
+    let port = get_free_port();
+    let (_handle, addr) = start_test_server(port, temp_dir);
+    
+    let lines = "cpu,host=server1 value=0.5\ncpu,host=server2 value=1.5";
+    send_http_request(addr, "POST", "/write?db=testdb", Some(lines));
+    thread::sleep(Duration::from_millis(50));
+    
+    let query = "q=SELECT+COUNT(value)+FROM+cpu";
+    let response = send_http_request(addr, "GET", &format!("/query?db=testdb&{}", query), None);
+    assert!(response.contains("200 OK") || response.contains("HTTP/1.1 200"));
+}
+
+#[test]
+fn test_http_query_select_with_count_star() {
+    let temp_dir = std::env::temp_dir().join(format!("http_test_{}", std::process::id()));
+    let port = get_free_port();
+    let (_handle, addr) = start_test_server(port, temp_dir);
+    
+    let lines = "cpu,host=server1 value=0.5\ncpu,host=server2 value=1.5";
+    send_http_request(addr, "POST", "/write?db=testdb", Some(lines));
+    thread::sleep(Duration::from_millis(50));
+    
+    let query = "q=SELECT+COUNT(*)+FROM+cpu";
+    let response = send_http_request(addr, "GET", &format!("/query?db=testdb&{}", query), None);
+    assert!(response.contains("200 OK") || response.contains("HTTP/1.1 200"));
+}
