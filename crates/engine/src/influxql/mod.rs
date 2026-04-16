@@ -1,5 +1,6 @@
 use crate::error::{Error, Result};
 use std::collections::HashMap;
+use chrono::Utc;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Statement {
@@ -258,6 +259,11 @@ impl Parser {
 
     fn parse_single_condition(&self, condition: &str) -> Option<crate::FilterExpr> {
         let condition = condition.trim();
+        let condition_lower = condition.to_lowercase();
+        
+        if condition_lower.starts_with("time") {
+            return self.parse_time_condition(condition);
+        }
         
         if let Some(pos) = condition.find(">=") {
             let parts: Vec<&str> = condition.splitn(2, ">=").collect();
@@ -326,6 +332,85 @@ impl Parser {
         }
         
         None
+    }
+
+    fn parse_time_condition(&self, condition: &str) -> Option<crate::FilterExpr> {
+        let condition_lower = condition.to_lowercase();
+        
+        if condition_lower.contains("now()") {
+            let offset_ns = self.parse_duration_from_now(condition)?;
+            let now = chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0);
+            let target_time = now - offset_ns;
+            
+            if condition_lower.contains(">=") || condition_lower.contains("=>") {
+                return Some(crate::FilterExpr::Gte("time".to_string(), crate::FieldValue::Integer(target_time)));
+            }
+            if condition_lower.contains("<=") || condition_lower.contains("=<") {
+                return Some(crate::FilterExpr::Lte("time".to_string(), crate::FieldValue::Integer(target_time)));
+            }
+            if condition_lower.contains('>') && !condition_lower.contains(">=") {
+                return Some(crate::FilterExpr::Gt("time".to_string(), crate::FieldValue::Integer(target_time)));
+            }
+            if condition_lower.contains('<') && !condition_lower.contains("<=") {
+                return Some(crate::FilterExpr::Lt("time".to_string(), crate::FieldValue::Integer(target_time)));
+            }
+            if condition_lower.contains('=') {
+                return Some(crate::FilterExpr::Eq("time".to_string(), crate::FieldValue::Integer(target_time)));
+            }
+        }
+        
+        None
+    }
+
+    fn parse_duration_from_now(&self, condition: &str) -> Option<i64> {
+        let condition_lower = condition.to_lowercase();
+        
+        let offset_str = if let Some(pos) = condition_lower.find("now()") {
+            let after_now = &condition[pos + 5..];
+            after_now.trim().to_string()
+        } else {
+            return None;
+        };
+        
+        let offset_str = offset_str.trim();
+        
+        let mut offset_ns: i64 = 0;
+        let mut num_str = String::new();
+        let mut unit_found = false;
+        
+        for c in offset_str.chars() {
+            if c.is_numeric() {
+                num_str.push(c);
+                unit_found = false;
+            } else if c.is_alphabetic() || c == ' ' {
+                unit_found = true;
+                let num: i64 = num_str.parse().unwrap_or(0);
+                let unit_lower = offset_str[offset_str.find(&c.to_string()).unwrap_or(0)..].to_lowercase();
+                
+                if unit_lower.starts_with('s') && !unit_lower.starts_with("sec") {
+                    offset_ns = num * 1_000_000_000;
+                } else if unit_lower.starts_with("sec") {
+                    offset_ns = num * 1_000_000_000;
+                } else if unit_lower.starts_with("min") {
+                    offset_ns = num * 60 * 1_000_000_000;
+                } else if unit_lower.starts_with('h') {
+                    offset_ns = num * 3600 * 1_000_000_000;
+                } else if unit_lower.starts_with('d') {
+                    offset_ns = num * 86400 * 1_000_000_000;
+                } else if unit_lower.starts_with('w') {
+                    offset_ns = num * 604800 * 1_000_000_000;
+                } else if unit_lower.starts_with('m') && !unit_lower.starts_with("min") {
+                    offset_ns = num * 60 * 1_000_000_000;
+                }
+                break;
+            }
+        }
+        
+        if num_str.is_empty() || !unit_found {
+            return None;
+        }
+        
+        Some(offset_ns)
     }
 
     fn parse_value(&self, value_str: &str) -> Option<crate::FieldValue> {
