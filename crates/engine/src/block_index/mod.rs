@@ -33,10 +33,10 @@ impl BlockMeta {
     }
     
     pub fn update_value(&mut self, value: &[u8]) {
-        if self.min_value.is_empty() || value < &self.min_value {
+        if self.min_value.is_empty() || value < self.min_value.as_slice() {
             self.min_value = value.to_vec();
         }
-        if self.max_value.is_empty() || value > &self.max_value {
+        if self.max_value.is_empty() || value > self.max_value.as_slice() {
             self.max_value = value.to_vec();
         }
     }

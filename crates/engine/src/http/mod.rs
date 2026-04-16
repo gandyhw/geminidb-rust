@@ -1,6 +1,7 @@
 use crate::error::{Error, Result};
 use crate::line_protocol::LineProtocolParser;
 use crate::influxql::Parser;
+use crate::prometheus;
 use crate::{Engine, WriteBatch, Row, FieldValue, TimeRange, QueryRequest};
 use serde::{Deserialize, Serialize};
 use std::net::{SocketAddr, TcpListener, TcpStream};
@@ -180,6 +181,16 @@ fn handle_connection(
         handle_write(&lines, body_part, engine)
     } else if first_line.starts_with("POST /QUERY") || first_line.starts_with("GET /QUERY") {
         handle_query(&lines, engine)
+    } else if first_line.starts_with("POST /API/V1/WRITE") {
+        handle_prometheus_write(body_part, engine)
+    } else if first_line.starts_with("POST /API/V1/READ") || first_line.starts_with("GET /API/V1/READ") {
+        handle_prometheus_read(body_part, engine)
+    } else if first_line.starts_with("GET /API/V1/QUERY") {
+        handle_prometheus_query(&lines, engine)
+    } else if first_line.starts_with("GET /API/V1/QUERY_RANGE") {
+        handle_prometheus_query_range(&lines, engine)
+    } else if first_line.starts_with("GET /METRICS") {
+        handle_metrics(engine)
     } else if first_line.starts_with("GET /") {
         let path = first_line.strip_prefix("GET ").unwrap_or("").split_whitespace().next().unwrap_or("");
         if path == "/" || path.is_empty() {
@@ -687,6 +698,158 @@ fn handle_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String 
             format_http_response(200, "OK", "{\"results\":[{\"success\":true}]}")
         }
     }
+}
+
+fn handle_prometheus_write(body: &[u8], engine: &Arc<RwLock<Option<Engine>>>) -> String {
+    use crate::prometheus::PrometheusWriter;
+    let writer = PrometheusWriter::new(engine.clone());
+    match writer.write(body) {
+        Ok(_) => format_http_response(204, "No Content", ""),
+        Err(e) => format_http_response(500, "Internal Server Error", &e.to_string()),
+    }
+}
+
+fn handle_prometheus_read(body: &[u8], engine: &Arc<RwLock<Option<Engine>>>) -> String {
+    use crate::prometheus::PrometheusReader;
+    let reader = PrometheusReader::new(engine.clone());
+    match reader.read(body) {
+        Ok(response) => {
+            let mut buf = Vec::new();
+            buf.extend_from_slice(b"HTTP/1.1 200 OK\r\n");
+            buf.extend_from_slice(b"Server: openGemini-rs/\r\n");
+            buf.extend_from_slice(b"Content-Type: application/x-protobuf\r\n");
+            buf.extend_from_slice(format!("Content-Length: {}\r\n", response.len()).as_bytes());
+            buf.extend_from_slice(b"Connection: close\r\n");
+            buf.extend_from_slice(b"\r\n");
+            buf.extend_from_slice(&response);
+            return String::from_utf8_lossy(&buf).to_string();
+        }
+        Err(e) => format_http_response(500, "Internal Server Error", &e.to_string()),
+    }
+}
+
+fn handle_prometheus_query(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String {
+    let first_line = lines.first().unwrap_or(&"");
+    let mut query_str = String::new();
+    let mut time_str = String::from("0");
+
+    if let Some(path_start) = first_line.find("/query") {
+        let after_query = &first_line[path_start + 6..];
+        let query_part = if let Some(pos) = after_query.find('?') {
+            &after_query[pos + 1..]
+        } else {
+            after_query
+        };
+
+        for param in query_part.split('&') {
+            let param_lower = param.to_lowercase();
+            if param_lower.starts_with("q=") {
+                query_str = url_decode(&param[2..]);
+            } else if param_lower.starts_with("time=") {
+                time_str = url_decode(&param[5..]);
+            }
+        }
+    }
+
+    if query_str.is_empty() {
+        return format_http_response(400, "Bad Request", "{\"error\":\"missing query parameter\"}");
+    }
+
+    let binding = engine.read().unwrap();
+    let engine_guard = match binding.as_ref() {
+        Some(e) => e,
+        None => return format_http_response(500, "Internal Server Error", "Engine not initialized"),
+    };
+
+    let result = crate::prometheus::execute_promql_query(engine_guard, &query_str);
+    
+    let response = format!(
+        "{{\"status\":\"success\",\"data\":{{\"resultType\":\"vector\",\"result\":[{{\"metric\":{},\"value\":[{},{:?}]}}]}}}}",
+        serde_json::to_string(&result.metric).unwrap(),
+        time_str,
+        result.value
+    );
+    
+    format_http_response(200, "OK", &response)
+}
+
+fn handle_prometheus_query_range(lines: &[&str], engine: &Arc<RwLock<Option<Engine>>>) -> String {
+    let first_line = lines.first().unwrap_or(&"");
+    let mut query_str = String::new();
+    let mut start_str = String::from("0");
+    let mut end_str = String::from("0");
+    let mut step_str = String::from("60");
+
+    if let Some(path_start) = first_line.find("/query_range") {
+        let after_query = &first_line[path_start + 11..];
+        let query_part = if let Some(pos) = after_query.find('?') {
+            &after_query[pos + 1..]
+        } else {
+            after_query
+        };
+
+        for param in query_part.split('&') {
+            let param_lower = param.to_lowercase();
+            if param_lower.starts_with("query=") {
+                query_str = url_decode(&param[6..]);
+            } else if param_lower.starts_with("start=") {
+                start_str = url_decode(&param[6..]);
+            } else if param_lower.starts_with("end=") {
+                end_str = url_decode(&param[4..]);
+            } else if param_lower.starts_with("step=") {
+                step_str = url_decode(&param[5..]);
+            }
+        }
+    }
+
+    if query_str.is_empty() {
+        return format_http_response(400, "Bad Request", "{\"error\":\"missing query parameter\"}");
+    }
+
+    let binding = engine.read().unwrap();
+    let engine_guard = match binding.as_ref() {
+        Some(e) => e,
+        None => return format_http_response(500, "Internal Server Error", "Engine not initialized"),
+    };
+
+    let start: i64 = start_str.parse().unwrap_or(0);
+    let end: i64 = end_str.parse().unwrap_or(0);
+    let step: i64 = step_str.parse().unwrap_or(60);
+
+    let values: Vec<(i64, f64)> = prometheus::execute_promql_query_range(engine_guard, &query_str, start, end, step);
+    
+    let mut result_values = Vec::new();
+    for (ts, val) in &values {
+        result_values.push(format!("[{},{:?}]", ts, val));
+    }
+    
+    let response = format!(
+        "{{\"status\":\"success\",\"data\":{{\"resultType\":\"matrix\",\"result\":[{{\"metric\":{{}},\"values\":[{}]}}]}}}}",
+        result_values.join(",")
+    );
+    
+    format_http_response(200, "OK", &response)
+}
+
+fn handle_metrics(engine: &Arc<RwLock<Option<Engine>>>) -> String {
+    let binding = engine.read().unwrap();
+    let engine_guard = match binding.as_ref() {
+        Some(e) => e,
+        None => return "HTTP/1.1 500 Internal Server Error\r\n\r\nEngine not initialized".to_string(),
+    };
+
+    let metrics = prometheus::format_metrics(engine_guard);
+    
+    let mut buf = Vec::new();
+    buf.extend_from_slice(b"HTTP/1.1 200 OK\r\n");
+    buf.extend_from_slice(b"Server: openGemini-rs\r\n");
+    buf.extend_from_slice(b"Content-Type: text/plain; version=0.0.4\r\n");
+    buf.extend_from_slice(format!("Content-Length: {}\r\n", metrics.len()).as_bytes());
+    buf.extend_from_slice(b"Connection: close\r\n");
+    buf.extend_from_slice(b"\r\n");
+    buf.extend_from_slice(metrics.as_bytes());
+    
+    String::from_utf8_lossy(&buf).to_string()
 }
 
 fn format_results(measurement: &str, fields: &[crate::influxql::Field], result: &crate::QueryResult) -> String {

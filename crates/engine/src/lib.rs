@@ -26,6 +26,7 @@ pub mod raft;
 pub mod line_protocol;
 pub mod influxql;
 pub mod http;
+pub mod prometheus;
 
 pub use config::{Config, EngineConfig, WalConfig, MemTableConfig, TsspConfig, CompactionConfig, CompressionType};
 pub use error::{Error, Result};
