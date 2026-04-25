@@ -628,17 +628,368 @@ mod tests {
     #[test]
     fn test_get_log_entry() {
         let node = RaftNode::new(1, 5000, 1000);
-        
+
         node.append_log(LogEntry::new(1, 1, LogEntryData::Data {
             database: "testdb".to_string(),
             payload: vec![],
         }));
-        
+
         let entry = node.get_log_entry(1);
         assert!(entry.is_some());
         assert_eq!(entry.unwrap().index, 1);
-        
+
         let none = node.get_log_entry(999);
         assert!(none.is_none());
+    }
+
+    #[test]
+    fn test_vote_request_stale_term() {
+        let node = RaftNode::new(1, 5000, 1000);
+        node.become_leader();
+
+        let req = VoteRequest {
+            term: 0,
+            candidate_id: 2,
+            last_log_index: 1,
+            last_log_term: 1,
+        };
+
+        let result = node.request_vote(req);
+        assert!(!result.vote_granted);
+    }
+
+    #[test]
+    fn test_vote_request_already_voted() {
+        let node = RaftNode::new(1, 5000, 1000);
+
+        let req1 = VoteRequest {
+            term: 1,
+            candidate_id: 2,
+            last_log_index: 0,
+            last_log_term: 0,
+        };
+        node.request_vote(req1);
+
+        let req2 = VoteRequest {
+            term: 1,
+            candidate_id: 3,
+            last_log_index: 0,
+            last_log_term: 0,
+        };
+        let result = node.request_vote(req2);
+        assert!(!result.vote_granted);
+    }
+
+    #[test]
+    fn test_vote_request_outdated_log() {
+        let node = RaftNode::new(1, 5000, 1000);
+
+        node.append_log(LogEntry::new(1, 2, LogEntryData::Data {
+            database: "testdb".to_string(),
+            payload: vec![],
+        }));
+
+        let req = VoteRequest {
+            term: 1,
+            candidate_id: 2,
+            last_log_index: 0,
+            last_log_term: 0,
+        };
+
+        let result = node.request_vote(req);
+        assert!(!result.vote_granted);
+    }
+
+    #[test]
+    fn test_append_entries_truncate_conflict() {
+        let node = RaftNode::new(1, 5000, 1000);
+
+        node.append_log(LogEntry::new(1, 1, LogEntryData::Data {
+            database: "testdb".to_string(),
+            payload: vec![1],
+        }));
+        node.append_log(LogEntry::new(2, 1, LogEntryData::Data {
+            database: "testdb".to_string(),
+            payload: vec![2],
+        }));
+
+        let req = AppendEntriesRequest {
+            term: 2,
+            leader_id: 2,
+            prev_log_index: 0,
+            prev_log_term: 0,
+            entries: vec![
+                LogEntry::new(1, 2, LogEntryData::Data {
+                    database: "testdb".to_string(),
+                    payload: vec![10],
+                }),
+                LogEntry::new(2, 2, LogEntryData::Data {
+                    database: "testdb".to_string(),
+                    payload: vec![20],
+                }),
+            ],
+            leader_commit: 2,
+        };
+
+        let result = node.append_entries(req);
+        assert!(result.success);
+        assert_eq!(node.last_log_index(), 2);
+    }
+
+    #[test]
+    fn test_append_entries_update_commit_index() {
+        let node = RaftNode::new(1, 5000, 1000);
+
+        node.append_log(LogEntry::new(1, 1, LogEntryData::Data {
+            database: "testdb".to_string(),
+            payload: vec![],
+        }));
+
+        let req = AppendEntriesRequest {
+            term: 1,
+            leader_id: 2,
+            prev_log_index: 1,
+            prev_log_term: 1,
+            entries: vec![],
+            leader_commit: 1,
+        };
+
+        node.append_entries(req);
+        assert_eq!(node.commit_index(), 1);
+    }
+
+    #[test]
+    fn test_append_entries_no_update_if_lower_commit() {
+        let node = RaftNode::new(1, 5000, 1000);
+        node.set_commit_index(5);
+
+        let req = AppendEntriesRequest {
+            term: 1,
+            leader_id: 2,
+            prev_log_index: 0,
+            prev_log_term: 0,
+            entries: vec![],
+            leader_commit: 3,
+        };
+
+        node.append_entries(req);
+        assert_eq!(node.commit_index(), 5);
+    }
+
+    #[test]
+    fn test_become_candidate() {
+        let node = RaftNode::new(1, 5000, 1000);
+        assert_eq!(node.state(), NodeState::Follower);
+        assert_eq!(node.current_term(), 0);
+
+        node.become_candidate();
+        assert_eq!(node.state(), NodeState::Candidate);
+        assert_eq!(node.current_term(), 1);
+    }
+
+    #[test]
+    fn test_multiple_term_increments() {
+        let node = RaftNode::new(1, 5000, 1000);
+
+        node.become_candidate();
+        node.become_candidate();
+        node.become_candidate();
+
+        assert_eq!(node.current_term(), 3);
+        assert_eq!(node.state(), NodeState::Candidate);
+    }
+
+    #[test]
+    fn test_log_entries_persist_across_state_changes() {
+        let node = RaftNode::new(1, 5000, 1000);
+
+        node.append_log(LogEntry::new(1, 1, LogEntryData::Data {
+            database: "db1".to_string(),
+            payload: vec![1],
+        }));
+        node.append_log(LogEntry::new(2, 1, LogEntryData::Data {
+            database: "db2".to_string(),
+            payload: vec![2],
+        }));
+
+        node.become_leader();
+        assert_eq!(node.last_log_index(), 2);
+
+        node.become_follower(2);
+        assert_eq!(node.last_log_index(), 2);
+    }
+
+    #[test]
+    fn test_get_log_returns_copy() {
+        let node = RaftNode::new(1, 5000, 1000);
+
+        node.append_log(LogEntry::new(1, 1, LogEntryData::Data {
+            database: "testdb".to_string(),
+            payload: vec![],
+        }));
+
+        let log1 = node.get_log();
+        let log2 = node.get_log();
+
+        assert_eq!(log1.len(), log2.len());
+    }
+
+    #[test]
+    fn test_peers_management() {
+        let node = RaftNode::new(1, 5000, 1000);
+
+        let peer1 = NodeInfo::new(2, new_socket_addr(8080));
+        let peer2 = NodeInfo::new(3, new_socket_addr(8081));
+
+        node.add_peer(peer1.clone());
+        node.add_peer(peer2.clone());
+
+        let peers = node.get_peers();
+        assert_eq!(peers.len(), 2);
+
+        node.remove_peer(2);
+        let peers = node.get_peers();
+        assert_eq!(peers.len(), 1);
+        assert_eq!(peers[0].id, 3);
+    }
+
+    #[test]
+    fn test_vote_result_serialization() {
+        let result = VoteResult {
+            term: 5,
+            vote_granted: true,
+        };
+
+        let serialized = serde_json::to_string(&result).unwrap();
+        let deserialized: VoteResult = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.term, 5);
+        assert!(deserialized.vote_granted);
+    }
+
+    #[test]
+    fn test_append_entries_result_serialization() {
+        let result = AppendEntriesResult {
+            term: 3,
+            success: true,
+            match_index: 10,
+        };
+
+        let serialized = serde_json::to_string(&result).unwrap();
+        let deserialized: AppendEntriesResult = serde_json::from_str(&serialized).unwrap();
+
+        assert_eq!(deserialized.term, 3);
+        assert!(deserialized.success);
+        assert_eq!(deserialized.match_index, 10);
+    }
+
+    #[test]
+    fn test_membership_default() {
+        let membership = Membership::default();
+        assert!(membership.voters.is_empty());
+        assert!(membership.learners.is_empty());
+    }
+
+    #[test]
+    fn test_membership_with_nodes() {
+        let membership = Membership {
+            voters: vec![1, 2, 3],
+            learners: vec![4, 5],
+        };
+
+        assert_eq!(membership.voters.len(), 3);
+        assert_eq!(membership.learners.len(), 2);
+    }
+
+    #[test]
+    fn test_node_info_with_state() {
+        let node_info = NodeInfo::new(1, new_socket_addr(8080));
+        assert_eq!(node_info.state, NodeState::Follower);
+
+        let leader_info = node_info.with_state(NodeState::Leader);
+        assert_eq!(leader_info.state, NodeState::Leader);
+    }
+
+    #[test]
+    fn test_cluster_node_lifecycle() {
+        let cluster = RaftCluster::new();
+
+        let node1 = cluster.create_node(1, 5000, 1000);
+        let node2 = cluster.create_node(2, 5000, 1000);
+
+        assert_eq!(cluster.node_count(), 2);
+        assert!(cluster.get_node(1).is_some());
+        assert!(cluster.get_node(2).is_some());
+        assert!(cluster.get_node(3).is_none());
+
+        cluster.remove_node(2);
+        assert_eq!(cluster.node_count(), 1);
+    }
+
+    #[test]
+    fn test_cluster_local_node() {
+        let cluster = RaftCluster::new();
+
+        let node = cluster.create_node(1, 5000, 1000);
+        cluster.set_local_node(node.clone());
+
+        let local = cluster.get_local_node();
+        assert!(local.is_some());
+        assert_eq!(local.unwrap().node_id(), 1);
+    }
+
+    #[test]
+    fn test_list_nodes() {
+        let cluster = RaftCluster::new();
+
+        cluster.create_node(1, 5000, 1000);
+        cluster.create_node(2, 5000, 1000);
+        cluster.create_node(3, 5000, 1000);
+
+        let nodes = cluster.list_nodes();
+        assert_eq!(nodes.len(), 3);
+        assert!(nodes.contains(&1));
+        assert!(nodes.contains(&2));
+        assert!(nodes.contains(&3));
+    }
+
+    #[test]
+    fn test_config_command_serialization() {
+        let cmd = ConfigCommand::AddNode {
+            node_id: 5,
+            addr: new_socket_addr(9000),
+        };
+
+        let serialized = serde_json::to_string(&cmd).unwrap();
+        assert!(serialized.contains("AddNode"));
+
+        let cmd2 = ConfigCommand::RemoveReplica {
+            shard_id: 1,
+            node_ids: vec![2, 3],
+        };
+
+        let serialized2 = serde_json::to_string(&cmd2).unwrap();
+        assert!(serialized2.contains("RemoveReplica"));
+    }
+
+    #[test]
+    fn test_log_entry_data_serialization() {
+        let data = LogEntryData::Config {
+            command: ConfigCommand::AddNode {
+                node_id: 1,
+                addr: new_socket_addr(8080),
+            },
+        };
+
+        let serialized = serde_json::to_string(&data).unwrap();
+        assert!(serialized.contains("config"));
+
+        let data2 = LogEntryData::Data {
+            database: "mydb".to_string(),
+            payload: vec![1, 2, 3],
+        };
+
+        let serialized2 = serde_json::to_string(&data2).unwrap();
+        assert!(serialized2.contains("data"));
     }
 }

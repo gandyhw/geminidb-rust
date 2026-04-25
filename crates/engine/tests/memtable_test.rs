@@ -161,3 +161,112 @@ fn test_memtable_field_value_types() {
     let result = memtable.insert(batch);
     assert!(result.is_ok());
 }
+
+#[test]
+fn test_memtable_clear() {
+    let mut memtable = MemTable::new(1024 * 1024);
+    let batch = create_test_batch("cpu", &[1000, 2000, 3000]);
+    memtable.insert(batch).unwrap();
+
+    assert_eq!(memtable.row_count(), 3);
+    assert!(memtable.size() > 0);
+
+    memtable.clear().unwrap();
+
+    assert_eq!(memtable.row_count(), 0);
+    assert_eq!(memtable.size(), 0);
+}
+
+#[test]
+fn test_memtable_scan_boundary_timestamps() {
+    let mut memtable = MemTable::new(1024 * 1024);
+    let batch = create_test_batch("cpu", &[1000, 2000, 3000]);
+    memtable.insert(batch).unwrap();
+
+    let results = memtable.scan(b"cpu", 1000, 1001).unwrap();
+    assert_eq!(results.len(), 1);
+
+    let results = memtable.scan(b"cpu", 3000, 3001).unwrap();
+    assert_eq!(results.len(), 1);
+
+    let results = memtable.scan(b"cpu", 999, 1001).unwrap();
+    assert_eq!(results.len(), 1);
+}
+
+#[test]
+fn test_memtable_exact_flush_threshold() {
+    let mut memtable = MemTable::new(200);
+    let batch1 = create_test_batch("cpu", &[1000]);
+    memtable.insert(batch1).unwrap();
+
+    assert!(memtable.should_flush());
+
+    let batch2 = create_test_batch("memory", &[2000]);
+    memtable.insert(batch2).unwrap();
+
+    assert!(memtable.should_flush());
+}
+
+#[test]
+fn test_memtable_multiple_batches_same_table() {
+    let mut memtable = MemTable::new(1024 * 1024);
+
+    let batch1 = create_test_batch("cpu", &[1000, 2000]);
+    memtable.insert(batch1).unwrap();
+
+    let batch2 = create_test_batch("cpu", &[3000, 4000]);
+    memtable.insert(batch2).unwrap();
+
+    let results = memtable.scan(b"cpu", 0, i64::MAX).unwrap();
+    assert_eq!(results.len(), 4);
+}
+
+#[test]
+fn test_memtable_scan_after_clear() {
+    let mut memtable = MemTable::new(1024 * 1024);
+    let batch = create_test_batch("cpu", &[1000, 2000]);
+    memtable.insert(batch).unwrap();
+
+    memtable.clear().unwrap();
+
+    let results = memtable.scan(b"cpu", 0, i64::MAX).unwrap();
+    assert_eq!(results.len(), 0);
+}
+
+#[test]
+fn test_memtable_row_key_ordering() {
+    let mut memtable = MemTable::new(1024 * 1024);
+
+    let mut tags1 = std::collections::HashMap::new();
+    tags1.insert("host".to_string(), "server1".to_string());
+    let row1 = Row {
+        tags: tags1,
+        fields: std::collections::HashMap::new(),
+        timestamp: 1000,
+    };
+    let batch1 = WriteBatch {
+        database: "test_db".to_string(),
+        table: "cpu".to_string(),
+        rows: vec![row1],
+        timestamp: 1000,
+    };
+    memtable.insert(batch1).unwrap();
+
+    let mut tags2 = std::collections::HashMap::new();
+    tags2.insert("host".to_string(), "server2".to_string());
+    let row2 = Row {
+        tags: tags2,
+        fields: std::collections::HashMap::new(),
+        timestamp: 1000,
+    };
+    let batch2 = WriteBatch {
+        database: "test_db".to_string(),
+        table: "cpu".to_string(),
+        rows: vec![row2],
+        timestamp: 1000,
+    };
+    memtable.insert(batch2).unwrap();
+
+    let results = memtable.scan(b"cpu", 0, i64::MAX).unwrap();
+    assert_eq!(results.len(), 2);
+}

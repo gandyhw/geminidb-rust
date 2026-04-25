@@ -211,3 +211,116 @@ fn test_tssp_schema_creation() {
     assert_eq!(schema.columns.get("region"), Some(&1));
     assert_eq!(schema.columns.get("cpu"), Some(&2));
 }
+
+#[test]
+fn test_tssp_writer_multiple_schemas_rejected() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_config(&temp_dir);
+    let mut writer = TsspWriter::new(config).unwrap();
+
+    let schema1 = TableSchema {
+        table_id: 1,
+        columns: vec![("cpu".to_string(), 0)].into_iter().collect(),
+    };
+
+    let time_values: Vec<u8> = vec![1000i64].iter().flat_map(|v| v.to_le_bytes()).collect();
+
+    writer.write_batch(&schema1, 1000, 2000, vec![
+        ColumnData { column_id: 0, values: time_values.clone(), null_count: 0 },
+    ]).unwrap();
+
+    let schema2 = TableSchema {
+        table_id: 2,
+        columns: vec![("memory".to_string(), 0)].into_iter().collect(),
+    };
+
+    let result = writer.write_batch(&schema2, 2000, 3000, vec![
+        ColumnData { column_id: 0, values: time_values, null_count: 0 },
+    ]);
+
+    assert!(result.is_ok());
+}
+
+#[test]
+fn test_tssp_writer_add_series_keys() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_config(&temp_dir);
+    let mut writer = TsspWriter::new(config).unwrap();
+
+    writer.add_series_key(b"host=server1");
+    writer.add_series_key(b"host=server2");
+    writer.add_series_key(b"region=us-east");
+
+    let schema = TableSchema {
+        table_id: 1,
+        columns: vec![("value".to_string(), 0)].into_iter().collect(),
+    };
+
+    let time_values: Vec<u8> = vec![1000i64].iter().flat_map(|v| v.to_le_bytes()).collect();
+
+    writer.write_batch(&schema, 1000, 2000, vec![
+        ColumnData { column_id: 0, values: time_values, null_count: 0 },
+    ]).unwrap();
+
+    let meta = writer.close().unwrap();
+    assert!(meta.size > 0);
+}
+
+#[test]
+fn test_tssp_writer_time_range_tracking() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_config(&temp_dir);
+    let mut writer = TsspWriter::new(config).unwrap();
+
+    let schema = TableSchema {
+        table_id: 1,
+        columns: vec![("value".to_string(), 0)].into_iter().collect(),
+    };
+
+    let time_values: Vec<u8> = vec![5000i64].iter().flat_map(|v| v.to_le_bytes()).collect();
+
+    writer.write_batch(&schema, 5000, 6000, vec![
+        ColumnData { column_id: 0, values: time_values, null_count: 0 },
+    ]).unwrap();
+
+    let meta = writer.close().unwrap();
+    assert_eq!(meta.min_time, 5000);
+    assert_eq!(meta.max_time, 6000);
+}
+
+#[test]
+fn test_tssp_file_meta_with_bloom() {
+    let bloom_data = vec![1u64, 2, 3, 4, 5];
+    let meta = FileMeta {
+        file_id: 42,
+        min_time: 1000,
+        max_time: 5000,
+        size: 4096,
+        bloom_filter_data: Some(bloom_data.clone()),
+    };
+
+    assert_eq!(meta.file_id, 42);
+    assert!(meta.bloom_filter_data.is_some());
+    assert_eq!(meta.bloom_filter_data.unwrap(), bloom_data);
+}
+
+#[test]
+fn test_tssp_reader_new() {
+    let temp_dir = TempDir::new().unwrap();
+    let config = create_test_config(&temp_dir);
+    let reader = TsspReader::new(config);
+    assert!(reader.is_ok());
+}
+
+#[test]
+fn test_tssp_column_data() {
+    let col = ColumnData {
+        column_id: 5,
+        values: vec![1u8, 2, 3, 4, 5],
+        null_count: 2,
+    };
+
+    assert_eq!(col.column_id, 5);
+    assert_eq!(col.values.len(), 5);
+    assert_eq!(col.null_count, 2);
+}
