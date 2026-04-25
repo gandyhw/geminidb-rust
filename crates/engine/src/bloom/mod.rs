@@ -14,7 +14,7 @@ impl BloomFilter {
         let num_bits = (-(expected_elements as f64) * false_positive_rate.ln() / (LN_2.powi(2))).ceil() as usize;
         let num_hashes = ((num_bits as f64 / expected_elements as f64) * LN_2).ceil() as usize;
         
-        let num_words = (num_bits + 63) / 64;
+        let num_words = num_bits.div_ceil(64);
         let bit_array = vec![0u64; num_words.max(1)];
         
         Self {
@@ -151,5 +151,44 @@ mod tests {
     fn test_bloom_filter_empty() {
         let filter = BloomFilter::with_capacity(100);
         assert!(!filter.is_empty());
+    }
+
+    #[test]
+    fn test_bloom_filter_get_bit_array() {
+        let filter = BloomFilter::with_capacity(100);
+        let bit_array = filter.get_bit_array();
+        assert!(!bit_array.is_empty());
+    }
+
+    #[test]
+    fn test_bloom_filter_set_bit_array() {
+        let mut filter = BloomFilter::with_capacity(100);
+        filter.insert(b"test");
+
+        let bit_array = filter.get_bit_array().clone();
+        let mut new_filter = BloomFilter::with_capacity(100);
+        new_filter.set_bit_array(bit_array);
+
+        assert!(new_filter.contains(b"test"));
+    }
+
+    #[test]
+    fn test_bloom_filter_large_capacity() {
+        let mut filter = BloomFilter::with_capacity(1_000_000);
+        for i in 0u32..1000 {
+            filter.insert(&i.to_le_bytes());
+        }
+        for i in 0u32..1000 {
+            assert!(filter.contains(&i.to_le_bytes()));
+        }
+    }
+
+    #[test]
+    fn test_bloom_filter_multiple_inserts_same_key() {
+        let mut filter = BloomFilter::with_capacity(100);
+        filter.insert(b"test");
+        filter.insert(b"test");
+        filter.insert(b"test");
+        assert!(filter.contains(b"test"));
     }
 }

@@ -101,3 +101,104 @@ impl Default for CompactionConfig {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_wal_config_default() {
+        let config = WalConfig::default();
+        assert_eq!(config.file_size, 64 * 1024 * 1024);
+        assert!(config.sync_enabled);
+    }
+
+    #[test]
+    fn test_wal_config_custom() {
+        let config = WalConfig {
+            dir: PathBuf::from("/tmp/wal"),
+            file_size: 1024 * 1024,
+            sync_enabled: false,
+        };
+        assert_eq!(config.file_size, 1024 * 1024);
+        assert!(!config.sync_enabled);
+    }
+
+    #[test]
+    fn test_mem_table_config_default() {
+        let config = MemTableConfig::default();
+        assert_eq!(config.max_size, 64 * 1024 * 1024);
+        assert_eq!(config.flush_interval_ms, 1000);
+    }
+
+    #[test]
+    fn test_mem_table_config_custom() {
+        let config = MemTableConfig {
+            max_size: 128 * 1024 * 1024,
+            flush_interval_ms: 5000,
+        };
+        assert_eq!(config.max_size, 128 * 1024 * 1024);
+        assert_eq!(config.flush_interval_ms, 5000);
+    }
+
+    #[test]
+    fn test_tssp_config_default() {
+        let config = TsspConfig::default();
+        assert_eq!(config.max_file_size, 256 * 1024 * 1024);
+        assert_eq!(config.compression, CompressionType::Snappy);
+    }
+
+    #[test]
+    fn test_tssp_config_custom() {
+        let config = TsspConfig {
+            data_dir: PathBuf::from("/tmp/data"),
+            max_file_size: 512 * 1024 * 1024,
+            compression: CompressionType::Zstd,
+        };
+        assert_eq!(config.max_file_size, 512 * 1024 * 1024);
+        assert_eq!(config.compression, CompressionType::Zstd);
+    }
+
+    #[test]
+    fn test_compaction_config_default() {
+        let config = CompactionConfig::default();
+        assert!(config.enabled);
+        assert_eq!(config.max_concurrent, 4);
+        assert_eq!(config.trigger_interval_ms, 300_000);
+        assert_eq!(config.max_file_age_hours, 24);
+    }
+
+    #[test]
+    fn test_compaction_config_custom() {
+        let config = CompactionConfig {
+            enabled: false,
+            max_concurrent: 8,
+            trigger_interval_ms: 600_000,
+            max_file_age_hours: 48,
+        };
+        assert!(!config.enabled);
+        assert_eq!(config.max_concurrent, 8);
+        assert_eq!(config.trigger_interval_ms, 600_000);
+        assert_eq!(config.max_file_age_hours, 48);
+    }
+
+    #[test]
+    fn test_compression_type_extension() {
+        assert_eq!(CompressionType::None.extension(), "");
+        assert_eq!(CompressionType::Snappy.extension(), ".snappy");
+        assert_eq!(CompressionType::Zstd.extension(), ".zstd");
+        assert_eq!(CompressionType::Lz4.extension(), ".lz4");
+    }
+
+    #[test]
+    fn test_engine_config() {
+        let config = EngineConfig {
+            data_dir: PathBuf::from("/tmp/engine"),
+            wal: WalConfig::default(),
+            memtable: MemTableConfig::default(),
+            tssp: TsspConfig::default(),
+            compaction: CompactionConfig::default(),
+        };
+        assert_eq!(config.data_dir, PathBuf::from("/tmp/engine"));
+    }
+}

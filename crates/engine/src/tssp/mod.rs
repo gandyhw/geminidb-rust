@@ -140,8 +140,7 @@ impl TsspWriter {
             writer.write_all(&id.to_le_bytes())?;
         }
 
-        self.bytes_written = 4 + 4 + 8 + 4 + schema.columns.iter()
-            .map(|(name, _)| 4 + name.len() as u32 + 4)
+        self.bytes_written = 4 + 4 + 8 + 4 + schema.columns.keys().map(|name| 4 + name.len() as u32 + 4)
             .sum::<u32>() as u64;
         
         Ok(())

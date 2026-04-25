@@ -1,6 +1,6 @@
 use crate::error::{Error, Result};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -135,7 +135,7 @@ impl ShardManager {
             .join(retention_policy)
             .join(shard_id.to_string());
 
-        std::fs::create_dir_all(&shard_path).map_err(|e| Error::Io(e))?;
+        std::fs::create_dir_all(&shard_path).map_err(Error::Io)?;
 
         let info = ShardInfo::new(shard_id, database, retention_policy, shard_path);
         let arc = Arc::new(info);
@@ -193,7 +193,7 @@ impl ShardManager {
         };
 
         if let Some(shard) = shards.get(&shard_id) {
-            let mut info: ShardInfo = ShardInfo {
+            let info: ShardInfo = ShardInfo {
                 id: shard.id,
                 database: shard.database.clone(),
                 retention_policy: shard.retention_policy.clone(),
@@ -386,7 +386,7 @@ impl ShardMapper {
     }
 
     pub fn map_shard(&self, timestamp: i64) -> u64 {
-        (timestamp / self.shard_duration_seconds as i64).unsigned_abs() as u64
+        (timestamp / self.shard_duration_seconds as i64).unsigned_abs()
     }
 
     pub fn get_shard_duration(&self) -> u64 {
@@ -405,7 +405,7 @@ impl ShardMapper {
         true
     }
 
-    pub fn get_shard_path(&self, data_dir: &PathBuf, database: &str, rp: &str, shard_id: u64) -> PathBuf {
+    pub fn get_shard_path(&self, data_dir: &Path, database: &str, rp: &str, shard_id: u64) -> PathBuf {
         data_dir.join(database).join(rp).join(shard_id.to_string())
     }
 
@@ -554,7 +554,7 @@ mod tests {
         let temp_dir = temp_dir();
         let manager = ShardManager::new(temp_dir.clone());
 
-        let shard = manager.create_shard(1, "testdb", "rp1").unwrap();
+        let _shard = manager.create_shard(1, "testdb", "rp1").unwrap();
         assert_eq!(manager.shard_count(), 1);
 
         let retrieved = manager.get_shard(1);
@@ -714,5 +714,79 @@ mod tests {
         let (original, new_shard) = split_result.unwrap();
         assert_eq!(original.id, 1);
         assert!(new_shard.id > 1000000);
+    }
+
+    #[test]
+    fn test_shard_info_active_status() {
+        let temp_dir = temp_dir();
+        let manager = ShardManager::new(temp_dir);
+
+        manager.create_shard(1, "testdb", "rp1").unwrap();
+        let shard = manager.get_shard(1).unwrap();
+
+        assert!(shard.is_active());
+        assert!(!shard.is_readonly());
+        assert!(!shard.is_migrating());
+    }
+
+    #[test]
+    fn test_shard_info_readonly_status() {
+        let info = ShardInfo::new(1, "testdb", "rp1", PathBuf::from("/tmp/test"))
+            .with_status(ShardStatus::ReadOnly);
+
+        assert!(!info.is_active());
+        assert!(info.is_readonly());
+    }
+
+    #[test]
+    fn test_shard_info_migrating_status() {
+        let info = ShardInfo::new(1, "testdb", "rp1", PathBuf::from("/tmp/test"))
+            .with_status(ShardStatus::Migrating);
+
+        assert!(info.is_migrating());
+    }
+
+    #[test]
+    fn test_shard_info_update_metadata() {
+        let mut info = ShardInfo::new(1, "testdb", "rp1", PathBuf::from("/tmp/test"));
+
+        let old_updated_at = info.updated_at;
+        info.update_metadata();
+
+        assert!(info.updated_at >= old_updated_at);
+    }
+
+    #[test]
+    fn test_shard_info_with_replica_count() {
+        let info = ShardInfo::new(1, "testdb", "rp1", PathBuf::from("/tmp/test"))
+            .with_replica_count(3);
+
+        assert_eq!(info.replica_count, 3);
+    }
+
+    #[test]
+    fn test_shard_info_with_tier() {
+        let info = ShardInfo::new(1, "testdb", "rp1", PathBuf::from("/tmp/test"))
+            .with_tier(2);
+
+        assert_eq!(info.tier, 2);
+    }
+
+    #[test]
+    fn test_shard_info_with_size_and_row_count() {
+        let info = ShardInfo::new(1, "testdb", "rp1", PathBuf::from("/tmp/test"))
+            .with_size(1024 * 1024)
+            .with_row_count(10000);
+
+        assert_eq!(info.size_bytes, 1024 * 1024);
+        assert_eq!(info.row_count, 10000);
+    }
+
+    #[test]
+    fn test_shard_info_shard_duration() {
+        let info = ShardInfo::new(1, "testdb", "rp1", PathBuf::from("/tmp/test"))
+            .with_shard_duration(3600 * 24);
+
+        assert_eq!(info.shard_duration_seconds, 3600 * 24);
     }
 }

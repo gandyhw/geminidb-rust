@@ -225,7 +225,8 @@ impl BackupManager {
             }
         }
         
-        backups.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        backups.sort_by_key(|b| b.created_at);
+        backups.reverse();
         Ok(backups)
     }
     

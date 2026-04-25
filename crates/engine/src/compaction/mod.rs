@@ -296,7 +296,7 @@ impl CompactionResult {
 
     pub fn space_saved(&self) -> i64 {
         let original_size: i64 = self.original_files.iter().map(|f| f.size as i64).sum();
-        let compacted_size = self.compacted_files.iter().map(|f| f.size as i64).sum::<i64>() as i64;
+        let compacted_size = self.compacted_files.iter().map(|f| f.size as i64).sum::<i64>();
         original_size - compacted_size
     }
 }
@@ -489,5 +489,145 @@ mod tests {
         assert_eq!(manager.get_compaction_priority(5, 1024), CompactionPriority::Normal);
         assert_eq!(manager.get_compaction_priority(10, 1024), CompactionPriority::High);
         assert_eq!(manager.get_compaction_priority(20, 1024), CompactionPriority::Critical);
+    }
+
+    #[test]
+    fn test_compaction_config_default() {
+        let config = CompactionConfig::default();
+        assert_eq!(config.max_concurrent, 4);
+        assert!(config.enabled);
+        assert_eq!(config.trigger_interval_ms, 300_000);
+        assert_eq!(config.max_file_age_hours, 24);
+    }
+
+    #[test]
+    fn test_compaction_config_custom() {
+        let mut config = CompactionConfig::default();
+        config.max_concurrent = 8;
+        config.enabled = false;
+
+        assert_eq!(config.max_concurrent, 8);
+        assert!(!config.enabled);
+    }
+
+    #[test]
+    fn test_select_candidates_with_empty_list() {
+        let config = CompactionConfig::default();
+        let manager = CompactionManager::new(config);
+
+        let candidates = manager.select_compaction_candidates(&[], &CompactionOptions::default());
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn test_select_candidates_with_single_file() {
+        let config = CompactionConfig::default();
+        let manager = CompactionManager::new(config);
+
+        let files = vec![
+            create_test_file_meta(1, 100, 200, 1024),
+        ];
+
+        let candidates = manager.select_compaction_candidates(&files, &CompactionOptions::default());
+        assert_eq!(candidates.len(), 1);
+    }
+
+    #[test]
+    fn test_select_candidates_with_many_files() {
+        let config = CompactionConfig::default();
+        let manager = CompactionManager::new(config);
+
+        let files = vec![
+            create_test_file_meta(1, 100, 200, 1024),
+            create_test_file_meta(2, 200, 300, 1024),
+            create_test_file_meta(3, 300, 400, 1024),
+            create_test_file_meta(4, 400, 500, 1024),
+            create_test_file_meta(5, 500, 600, 1024),
+        ];
+
+        let options = CompactionOptions {
+            max_compact_files: 3,
+            ..Default::default()
+        };
+
+        let candidates = manager.select_compaction_candidates(&files, &options);
+        assert!(!candidates.is_empty());
+    }
+
+    #[test]
+    fn test_candidate_multiple_files_time_overlap() {
+        let files = vec![
+            create_test_file_meta(1, 100, 300, 1024),
+            create_test_file_meta(2, 200, 400, 2048),
+            create_test_file_meta(3, 350, 500, 4096),
+        ];
+        let candidate = CompactionCandidate::new(files);
+
+        assert_eq!(candidate.file_count(), 3);
+        assert!(candidate.total_size > 0);
+    }
+
+    #[test]
+    fn test_candidate_time_range() {
+        let files = vec![
+            create_test_file_meta(1, 100, 200, 1024),
+            create_test_file_meta(2, 300, 400, 2048),
+        ];
+        let candidate = CompactionCandidate::new(files);
+
+        assert_eq!(candidate.time_range.0, 100);
+        assert_eq!(candidate.time_range.1, 400);
+    }
+
+    #[test]
+    fn test_compaction_result_zero_values() {
+        let result = CompactionResult::new();
+        assert_eq!(result.compression_ratio(), 1.0);
+        assert_eq!(result.space_saved(), 0);
+    }
+
+    #[test]
+    fn test_compaction_result_unchanged() {
+        let mut result = CompactionResult::new();
+        result.original_files = vec![
+            create_test_file_meta(1, 100, 200, 1000),
+        ];
+        result.compacted_files = vec![
+            create_test_file_meta(2, 100, 200, 1000),
+        ];
+        result.bytes_written = 1000;
+
+        assert_eq!(result.compression_ratio(), 1.0);
+        assert_eq!(result.space_saved(), 0);
+    }
+
+    #[test]
+    fn test_compaction_result_multiple_files() {
+        let mut result = CompactionResult::new();
+        result.original_files = vec![
+            create_test_file_meta(1, 100, 200, 1000),
+            create_test_file_meta(2, 200, 300, 2000),
+            create_test_file_meta(3, 300, 400, 3000),
+        ];
+        result.compacted_files = vec![
+            create_test_file_meta(4, 100, 400, 1500),
+        ];
+        result.bytes_written = 1500;
+
+        assert_eq!(result.space_saved(), 4500);
+    }
+
+    #[test]
+    fn test_compaction_options_with_force() {
+        let options = CompactionOptions {
+            force: true,
+            priority: CompactionPriority::High,
+            max_compact_files: 5,
+            max_file_size: 128 * 1024 * 1024,
+        };
+
+        assert!(options.force);
+        assert_eq!(options.priority, CompactionPriority::High);
+        assert_eq!(options.max_compact_files, 5);
     }
 }

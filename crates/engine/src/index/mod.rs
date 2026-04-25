@@ -32,11 +32,11 @@ impl SeriesIndex {
     }
 
     pub fn len(&self) -> u64 {
-        self.bitmap.len() as u64
+        self.bitmap.len()
     }
 
     pub fn cardinality(&self) -> u64 {
-        self.bitmap.len() as u64
+        self.bitmap.len()
     }
 
     pub fn clear(&mut self) {

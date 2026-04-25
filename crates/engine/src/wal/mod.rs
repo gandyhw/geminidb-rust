@@ -127,6 +127,10 @@ impl Wal {
         }
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn purge(&self, before_file_id: u64) -> Result<()> {
         let entries = fs::read_dir(&self.dir)?;
         for entry in entries.flatten() {

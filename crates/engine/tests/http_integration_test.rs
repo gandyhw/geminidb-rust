@@ -282,12 +282,72 @@ fn test_http_query_select_with_count_star() {
     let temp_dir = std::env::temp_dir().join(format!("http_test_{}", std::process::id()));
     let port = get_free_port();
     let (_handle, addr) = start_test_server(port, temp_dir);
-    
+
     let lines = "cpu,host=server1 value=0.5\ncpu,host=server2 value=1.5";
     send_http_request(addr, "POST", "/write?db=testdb", Some(lines));
     thread::sleep(Duration::from_millis(50));
-    
+
     let query = "q=SELECT+COUNT(*)+FROM+cpu";
+    let response = send_http_request(addr, "GET", &format!("/query?db=testdb&{}", query), None);
+    assert!(response.contains("200 OK") || response.contains("HTTP/1.1 200"));
+}
+
+#[test]
+fn test_http_show_tag_values() {
+    let temp_dir = std::env::temp_dir().join(format!("http_test_{}", std::process::id()));
+    let port = get_free_port();
+    let (_handle, addr) = start_test_server(port, temp_dir);
+
+    let lines = "cpu,host=server1,region=us-east value=0.5\ncpu,host=server2,region=us-west value=1.5";
+    send_http_request(addr, "POST", "/write?db=testdb", Some(lines));
+    thread::sleep(Duration::from_millis(50));
+
+    let query = "q=SHOW+TAG+VALUES+FROM+cpu+WITH+KEY=host";
+    let response = send_http_request(addr, "GET", &format!("/query?db=testdb&{}", query), None);
+    assert!(response.contains("200 OK") || response.contains("HTTP/1.1 200"));
+}
+
+#[test]
+fn test_http_show_series() {
+    let temp_dir = std::env::temp_dir().join(format!("http_test_{}", std::process::id()));
+    let port = get_free_port();
+    let (_handle, addr) = start_test_server(port, temp_dir);
+
+    let line = "cpu,host=server1 value=0.5";
+    send_http_request(addr, "POST", "/write?db=testdb", Some(line));
+    thread::sleep(Duration::from_millis(50));
+
+    let query = "q=SHOW+SERIES";
+    let response = send_http_request(addr, "GET", &format!("/query?db=testdb&{}", query), None);
+    assert!(response.contains("200 OK") || response.contains("HTTP/1.1 200"));
+}
+
+#[test]
+fn test_http_query_with_limit() {
+    let temp_dir = std::env::temp_dir().join(format!("http_test_{}", std::process::id()));
+    let port = get_free_port();
+    let (_handle, addr) = start_test_server(port, temp_dir);
+
+    let lines = "cpu,host=server1 value=0.5\ncpu,host=server2 value=1.5\ncpu,host=server3 value=2.5";
+    send_http_request(addr, "POST", "/write?db=testdb", Some(lines));
+    thread::sleep(Duration::from_millis(50));
+
+    let query = "q=SELECT+*+FROM+cpu+LIMIT+2";
+    let response = send_http_request(addr, "GET", &format!("/query?db=testdb&{}", query), None);
+    assert!(response.contains("200 OK") || response.contains("HTTP/1.1 200"));
+}
+
+#[test]
+fn test_http_query_with_order_by_time_desc() {
+    let temp_dir = std::env::temp_dir().join(format!("http_test_{}", std::process::id()));
+    let port = get_free_port();
+    let (_handle, addr) = start_test_server(port, temp_dir);
+
+    let lines = "cpu,host=server1 value=0.5\ncpu,host=server2 value=1.5";
+    send_http_request(addr, "POST", "/write?db=testdb", Some(lines));
+    thread::sleep(Duration::from_millis(50));
+
+    let query = "q=SELECT+*+FROM+cpu+ORDER+BY+time+DESC";
     let response = send_http_request(addr, "GET", &format!("/query?db=testdb&{}", query), None);
     assert!(response.contains("200 OK") || response.contains("HTTP/1.1 200"));
 }

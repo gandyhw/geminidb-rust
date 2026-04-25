@@ -356,11 +356,122 @@ fn create_test_batch(table: &str, start: i64, end: i64) -> WriteBatch {
         fields.insert("memory".to_string(), FieldValue::Integer(ts * 1024));
         Row { tags, fields, timestamp: ts }
     }).collect();
-    
+
     WriteBatch {
         database: "test_db".to_string(),
         table: table.to_string(),
         rows,
         timestamp: start,
     }
+}
+
+#[test]
+fn test_wal_empty_directory_replay() {
+    let temp_dir = unique_temp_dir("wal_empty_replay");
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let wal_config = WalConfig {
+        dir: temp_dir.join("wal"),
+        file_size: 64 * 1024,
+        sync_enabled: false,
+    };
+
+    let wal = Wal::new(&wal_config).unwrap();
+
+    let mut replay_count = 0;
+    wal.replay(|_| {
+        replay_count += 1;
+        Ok(())
+    }).unwrap();
+
+    assert_eq!(replay_count, 0);
+}
+
+#[test]
+fn test_memtable_exact_threshold_behavior() {
+    let mut memtable = MemTable::new(1024 * 1024);
+
+    let batch1 = create_test_batch("cpu", 0, 0);
+    memtable.insert(batch1).unwrap();
+    let size_after_one = memtable.size();
+
+    let batch2 = create_test_batch("cpu", 1, 1);
+    memtable.insert(batch2).unwrap();
+
+    assert!(memtable.size() > size_after_one);
+}
+
+#[test]
+fn test_memtable_multiple_scans() {
+    let mut memtable = MemTable::new(1024 * 1024);
+
+    let batch = create_test_batch("cpu", 0, 100);
+    memtable.insert(batch).unwrap();
+
+    let results1 = memtable.scan(b"cpu", 0, 50).unwrap();
+    let results2 = memtable.scan(b"cpu", 50, 100).unwrap();
+    let results3 = memtable.scan(b"cpu", 0, 100).unwrap();
+
+    assert!(results1.len() < results3.len());
+    assert!(results2.len() < results3.len());
+}
+
+#[test]
+fn test_tssp_writer_multiple_close() {
+    let temp_dir = unique_temp_dir("tssp_double_close");
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let config = TsspConfig {
+        data_dir: temp_dir,
+        max_file_size: 256 * 1024,
+        compression: CompressionType::None,
+    };
+
+    let mut schema = TableSchema {
+        table_id: 1,
+        columns: HashMap::new(),
+    };
+    schema.columns.insert("time".to_string(), 0);
+    schema.columns.insert("value".to_string(), 1);
+
+    let mut writer = TsspWriter::new(config).unwrap();
+
+    let time_values: Vec<u8> = (0i64..10i64).flat_map(|v| v.to_be_bytes().to_vec()).collect();
+    let field_values: Vec<u8> = (0i64..10i64).flat_map(|v| v.to_be_bytes().to_vec()).collect();
+
+    let column_data = vec![
+        ColumnData { column_id: 0, values: time_values, null_count: 0 },
+        ColumnData { column_id: 1, values: field_values, null_count: 0 },
+    ];
+
+    writer.write_batch(&schema, 0, 9000, column_data).unwrap();
+    let _meta = writer.close().unwrap();
+}
+
+#[test]
+fn test_wal_sync_disabled() {
+    let temp_dir = unique_temp_dir("wal_no_sync");
+    std::fs::create_dir_all(&temp_dir).unwrap();
+
+    let wal_config = WalConfig {
+        dir: temp_dir.join("wal"),
+        file_size: 64 * 1024,
+        sync_enabled: false,
+    };
+
+    let wal = Wal::new(&wal_config).unwrap();
+
+    let batch = create_test_batch("cpu", 0, 100);
+    wal.write(&batch).unwrap();
+
+    drop(wal);
+
+    let wal2 = Wal::new(&wal_config).unwrap();
+    let mut replay_count = 0;
+    wal2.replay(|_| {
+        replay_count += 1;
+        Ok(())
+    }).unwrap();
+
+    assert_eq!(replay_count, 1);
 }

@@ -297,7 +297,7 @@ impl Parser {
         if word.to_uppercase() == "WHERE" {
             self.skip_whitespace();
             let cond_start = self.pos;
-            while let Some(_) = self.peek() {
+            while self.peek().is_some() {
                 self.pos += 1;
             }
             if cond_start < self.pos {
@@ -523,9 +523,7 @@ impl Parser {
                 let num: i64 = num_str.parse().unwrap_or(0);
                 let unit_lower = offset_str[offset_str.find(&c.to_string()).unwrap_or(0)..].to_lowercase();
                 
-                if unit_lower.starts_with('s') && !unit_lower.starts_with("sec") {
-                    offset_ns = num * 1_000_000_000;
-                } else if unit_lower.starts_with("sec") {
+                if (unit_lower.starts_with('s') && !unit_lower.starts_with("sec")) || unit_lower.starts_with("sec") {
                     offset_ns = num * 1_000_000_000;
                 } else if unit_lower.starts_with("min") {
                     offset_ns = num * 60 * 1_000_000_000;
@@ -569,7 +567,8 @@ impl Parser {
         
         if (value_str.starts_with('\'') && value_str.ends_with('\'')) ||
            (value_str.starts_with('"') && value_str.ends_with('"')) {
-            return Some(crate::FieldValue::String(value_str[1..value_str.len()-1].as_bytes().to_vec()));
+            let inner = &value_str[1..value_str.len()-1];
+            return Some(crate::FieldValue::String(inner.as_bytes().to_vec()));
         }
         
         Some(crate::FieldValue::String(value_str.as_bytes().to_vec()))

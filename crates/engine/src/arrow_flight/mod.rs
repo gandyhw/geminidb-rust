@@ -239,7 +239,7 @@ impl FlightServer {
         let mut field_names: Vec<String> = Vec::new();
         
         if let Some(first_row) = rows.first() {
-            for (name, _) in &first_row.tags {
+            for name in first_row.tags.keys() {
                 fields.push(Field {
                     name: format!("tag_{}", name),
                     data_type: ArrowType::Utf8,

@@ -3,7 +3,6 @@ use openGemini_engine::{
     HttpServer, HttpConfig,
 };
 use std::path::PathBuf;
-use tracing_subscriber;
 
 fn main() {
     tracing_subscriber::fmt::init();
