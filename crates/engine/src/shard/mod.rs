@@ -193,7 +193,7 @@ impl ShardManager {
         };
 
         if let Some(shard) = shards.get(&shard_id) {
-            let mut info: ShardInfo = ShardInfo {
+            let info: ShardInfo = ShardInfo {
                 id: shard.id,
                 database: shard.database.clone(),
                 retention_policy: shard.retention_policy.clone(),
