@@ -40,7 +40,7 @@ A high-performance distributed time-series database written in Rust, inspired by
 | **Compression** | Snappy/Zstd/LZ4 | Done | 100% |
 | **Binaries** | server binary | Done | 100% |
 | | client binary (testing) | Done | 100% |
-| **Testing** | Unit Tests | Done | 542 |
+| **Testing** | Unit Tests | Done | 621 |
 | | Integration Tests | Done | 54+ |
 | | HTTP API Tests | Done | 17 |
 | | Benchmark Tests | Done | 34 |
@@ -277,7 +277,7 @@ engine.close().unwrap();
 ## Testing
 
 ```bash
-# Run all tests (484 passing)
+# Run all tests (621 passing)
 cargo test
 
 # Run with coverage
@@ -293,7 +293,7 @@ cargo bench
 ### Build Status
 
 - **Build**: Successful (no warnings)
-- **Tests**: 542 passing
+- **Tests**: 621 passing
 - **Parser Tests (InfluxQL)**: 41 passing
 - **HTTP Integration Tests**: 17 passing
 - **Benchmark Tests**: 34 functions
