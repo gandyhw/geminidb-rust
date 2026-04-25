@@ -152,4 +152,43 @@ mod tests {
         let filter = BloomFilter::with_capacity(100);
         assert!(!filter.is_empty());
     }
+
+    #[test]
+    fn test_bloom_filter_get_bit_array() {
+        let filter = BloomFilter::with_capacity(100);
+        let bit_array = filter.get_bit_array();
+        assert!(!bit_array.is_empty());
+    }
+
+    #[test]
+    fn test_bloom_filter_set_bit_array() {
+        let mut filter = BloomFilter::with_capacity(100);
+        filter.insert(b"test");
+
+        let bit_array = filter.get_bit_array().clone();
+        let mut new_filter = BloomFilter::with_capacity(100);
+        new_filter.set_bit_array(bit_array);
+
+        assert!(new_filter.contains(b"test"));
+    }
+
+    #[test]
+    fn test_bloom_filter_large_capacity() {
+        let mut filter = BloomFilter::with_capacity(1_000_000);
+        for i in 0u32..1000 {
+            filter.insert(&i.to_le_bytes());
+        }
+        for i in 0u32..1000 {
+            assert!(filter.contains(&i.to_le_bytes()));
+        }
+    }
+
+    #[test]
+    fn test_bloom_filter_multiple_inserts_same_key() {
+        let mut filter = BloomFilter::with_capacity(100);
+        filter.insert(b"test");
+        filter.insert(b"test");
+        filter.insert(b"test");
+        assert!(filter.contains(b"test"));
+    }
 }
