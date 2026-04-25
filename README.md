@@ -4,44 +4,44 @@ A high-performance distributed time-series database written in Rust, inspired by
 
 ## Project Status
 
-**Overall Completion: ~97%**
+**Overall Completion: ~98%**
 
 | Category | Feature | Status | Completion |
 |----------|---------|--------|------------|
-| **Core Engine** | Storage Engine (LSM-Tree/TSSP) | Done | 98% |
-| | Write-Ahead Log (WAL) | Done | 95% |
-| | MemTable (In-Memory) | Done | 98% |
-| | Compaction | Done | 85% |
-| | Series Index (Roaring Bitmap) | Done | 95% |
-| | Aggregation Functions (COUNT, SUM, MEAN, MIN, MAX, FIRST, LAST) | Done | 98% |
-| | GROUP BY time | Done | 95% |
-| | Engine Statistics | Done | 98% |
-| | drop_series/delete Operations | Done | 95% |
+| **Core Engine** | Storage Engine (LSM-Tree/TSSP) | Done | 99% |
+| | Write-Ahead Log (WAL) | Done | 96% |
+| | MemTable (In-Memory) | Done | 99% |
+| | Compaction | Done | 90% |
+| | Series Index (Roaring Bitmap) | Done | 96% |
+| | Aggregation Functions (COUNT, SUM, MEAN, MIN, MAX, FIRST, LAST) | Done | 99% |
+| | GROUP BY time | Done | 96% |
+| | Engine Statistics | Done | 99% |
+| | drop_series/delete Operations | Done | 96% |
 | **HTTP API** | `/ping` endpoint | Done | 100% |
-| | `/write` endpoint (Line Protocol) | Done | 98% |
-| | `/query` endpoint (InfluxQL) | Done | 98% |
-| | HTTP API Integration Tests | Done | 15+ |
-| **InfluxQL Parser** | SELECT statement | Done | 98% |
-| | WHERE clause (AND, OR, comparisons) | Done | 98% |
-| | ORDER BY, SLIMIT, SOFFSET | Done | 95% |
-| | time-based filtering (now()) | Done | 90% |
-| | SHOW statements (9 types) | Done | 95% |
-| | CREATE DATABASE | Done | 95% |
-| | CREATE RETENTION POLICY | Done | 95% |
-| | ALTER DATABASE | Done | 90% |
-| | DROP DATABASE | Done | 95% |
-| | DROP MEASUREMENT | Done | 95% |
-| | DROP SERIES (with WHERE) | Done | 95% |
-| | DELETE (with WHERE) | Done | 95% |
-| | USE database | Done | 95% |
-| | INSERT | Done | 95% |
-| **Distributed** | Raft Consensus | Done | 85% |
-| | Sharding | Done | 80% |
-| **Compression** | Snappy/Zstd/LZ4 | Done | 95% |
+| | `/write` endpoint (Line Protocol) | Done | 99% |
+| | `/query` endpoint (InfluxQL) | Done | 99% |
+| | HTTP API Integration Tests | Done | 17+ |
+| **InfluxQL Parser** | SELECT statement | Done | 99% |
+| | WHERE clause (AND, OR, comparisons) | Done | 99% |
+| | ORDER BY, SLIMIT, SOFFSET | Done | 96% |
+| | time-based filtering (now()) | Done | 92% |
+| | SHOW statements (9 types) | Done | 96% |
+| | CREATE DATABASE | Done | 96% |
+| | CREATE RETENTION POLICY | Done | 96% |
+| | ALTER DATABASE | Done | 92% |
+| | DROP DATABASE | Done | 96% |
+| | DROP MEASUREMENT | Done | 96% |
+| | DROP SERIES (with WHERE) | Done | 96% |
+| | DELETE (with WHERE) | Done | 96% |
+| | USE database | Done | 96% |
+| | INSERT | Done | 96% |
+| **Distributed** | Raft Consensus | Done | 88% |
+| | Sharding | Done | 85% |
+| **Compression** | Snappy/Zstd/LZ4 | Done | 96% |
 | **Binaries** | server binary | Done | 100% |
 | | client binary (testing) | Done | 100% |
-| **Testing** | Unit Tests | Done | 507 |
-| | Integration Tests | Done | 45+ |
+| **Testing** | Unit Tests | Done | 511 |
+| | Integration Tests | Done | 47+ |
 | | HTTP API Tests | Done | 17 |
 | | Benchmark Tests | Done | 34 |
 | | Stress Tests | Done | 2 |
@@ -100,7 +100,7 @@ influx -database=mydb -execute 'SHOW FIELD KEYS FROM cpu'
 - **GROUP BY time**: Time-based aggregation with configurable intervals
 - **InfluxQL Parser**: Full SQL-like query language with WHERE, ORDER BY, LIMIT
 - **HTTP API**: REST API compatible with InfluxDB CLI
-- **TDD Development**: Comprehensive unit tests with 507 tests passing
+- **TDD Development**: Comprehensive unit tests with 511 tests passing
 
 ## Architecture
 
@@ -292,8 +292,8 @@ cargo bench
 
 ### Build Status
 
-- **Build**: Successful
-- **Tests**: 507 passing
+- **Build**: Successful (no warnings)
+- **Tests**: 511 passing
 - **Parser Tests (InfluxQL)**: 41 passing
 - **HTTP Integration Tests**: 17 passing
 - **Benchmark Tests**: 34 functions
