@@ -331,11 +331,131 @@ mod tests {
             compression: crate::config::CompressionType::Snappy,
         };
         let tool = MergeTool::new(config);
-        
+
         let files = vec![create_test_file_meta(1, 100, 200, 1024)];
-        
+
         let candidates = tool.select_merge_candidates(&files, 2);
-        
+
         assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn test_merge_candidate_empty() {
+        let files = vec![];
+        let path = PathBuf::from("/data");
+        let candidate = MergeCandidate::new(files, path);
+
+        assert!(!candidate.is_valid());
+        assert_eq!(candidate.total_size(), 0);
+        assert_eq!(candidate.time_range(), (0, 0));
+    }
+
+    #[test]
+    fn test_merge_candidate_time_range_single_file() {
+        let files = vec![create_test_file_meta(1, 500, 600, 1024)];
+        let path = PathBuf::from("/data");
+        let candidate = MergeCandidate::new(files, path);
+
+        assert!(!candidate.is_valid());
+        assert_eq!(candidate.time_range(), (500, 600));
+    }
+
+    #[test]
+    fn test_merge_result_bytes_written() {
+        let mut result = MergeResult::new();
+        result.bytes_written = 4096;
+        assert_eq!(result.bytes_written, 4096);
+    }
+
+    #[test]
+    fn test_merge_result_rows_merged() {
+        let mut result = MergeResult::new();
+        result.rows_merged = 100;
+        assert_eq!(result.rows_merged, 100);
+    }
+
+    #[test]
+    fn test_merge_scheduler_get_merge_status() {
+        let config = CompactionConfig::default();
+        let mut scheduler = MergeScheduler::new(&config);
+
+        scheduler.start_merge(1);
+        scheduler.start_merge(2);
+
+        let status1 = scheduler.get_merge_status(1);
+        assert!(status1.is_some());
+
+        let status999 = scheduler.get_merge_status(999);
+        assert!(status999.is_none());
+    }
+
+    #[test]
+    fn test_merge_scheduler_in_progress_after_complete() {
+        let config = CompactionConfig::default();
+        let mut scheduler = MergeScheduler::new(&config);
+
+        scheduler.start_merge(1);
+        scheduler.start_merge(2);
+        assert_eq!(scheduler.in_progress_count(), 2);
+
+        scheduler.complete_merge(1);
+        assert_eq!(scheduler.in_progress_count(), 1);
+
+        scheduler.complete_merge(2);
+        assert_eq!(scheduler.in_progress_count(), 0);
+    }
+
+    #[test]
+    fn test_merge_scheduler_cancel_nonexistent() {
+        let config = CompactionConfig::default();
+        let mut scheduler = MergeScheduler::new(&config);
+
+        scheduler.start_merge(1);
+        let result = scheduler.cancel_merge(999);
+        assert!(!result);
+        assert_eq!(scheduler.in_progress_count(), 1);
+    }
+
+    #[test]
+    fn test_merge_tool_select_candidates_empty_files() {
+        let config = TsspConfig {
+            data_dir: PathBuf::from("/data"),
+            max_file_size: 256 * 1024 * 1024,
+            compression: crate::config::CompressionType::Snappy,
+        };
+        let tool = MergeTool::new(config);
+
+        let candidates = tool.select_merge_candidates(&[], 2);
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn test_merge_tool_select_candidates_large_batch() {
+        let config = TsspConfig {
+            data_dir: PathBuf::from("/data"),
+            max_file_size: 256 * 1024 * 1024,
+            compression: crate::config::CompressionType::Snappy,
+        };
+        let tool = MergeTool::new(config);
+
+        let files = vec![
+            create_test_file_meta(1, 100, 200, 1024),
+            create_test_file_meta(2, 200, 300, 2048),
+            create_test_file_meta(3, 300, 400, 3072),
+            create_test_file_meta(4, 400, 500, 4096),
+            create_test_file_meta(5, 500, 600, 5120),
+        ];
+
+        let candidates = tool.select_merge_candidates(&files, 3);
+
+        assert!(!candidates.is_empty());
+        assert!(candidates.len() <= (files.len() + 2) / 3);
+    }
+
+    #[test]
+    fn test_merge_result_default() {
+        let result = MergeResult::default();
+        assert!(result.input_files.is_empty());
+        assert!(result.output_file.is_none());
     }
 }

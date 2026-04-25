@@ -349,10 +349,158 @@ mod tests {
         let mut schema = Schema::new();
         schema.create_database("testdb".to_string()).unwrap();
         schema.create_retention_policy("testdb", crate::schema::RetentionPolicy::new("rp1".to_string(), 86400)).unwrap();
-        
+
         let executor = QueryExecutor::new(schema);
-        
+
         let fields = executor.get_measurement_fields("testdb", "cpu").unwrap();
         assert!(!fields.is_empty());
+    }
+
+    #[test]
+    fn test_query_request_with_offset() {
+        let mut request = QueryRequest::new(
+            "testdb".to_string(),
+            "cpu".to_string(),
+            TimeRange { start: 0, end: 1000 },
+        );
+        request.offset = Some(5);
+
+        assert_eq!(request.offset, Some(5));
+    }
+
+    #[test]
+    fn test_query_executor_execute_select_empty_rows() {
+        let mut schema = Schema::new();
+        schema.create_database("testdb".to_string()).unwrap();
+        schema.create_retention_policy("testdb", crate::schema::RetentionPolicy::new("rp1".to_string(), 86400)).unwrap();
+
+        let executor = QueryExecutor::new(schema);
+
+        let request = QueryRequest::new(
+            "testdb".to_string(),
+            "cpu".to_string(),
+            TimeRange { start: 0, end: 1000 },
+        )
+        .with_limit(10);
+
+        let rows = vec![];
+        let results = executor.execute_select(&request, rows).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_query_executor_execute_select_offset_beyond_length() {
+        let mut schema = Schema::new();
+        schema.create_database("testdb".to_string()).unwrap();
+        schema.create_retention_policy("testdb", crate::schema::RetentionPolicy::new("rp1".to_string(), 86400)).unwrap();
+
+        let executor = QueryExecutor::new(schema);
+
+        let mut request = QueryRequest::new(
+            "testdb".to_string(),
+            "cpu".to_string(),
+            TimeRange { start: 0, end: 1000 },
+        );
+        request.offset = Some(100);
+        request.limit = Some(10);
+
+        let rows = vec![
+            Row {
+                tags: std::collections::HashMap::new(),
+                fields: std::collections::HashMap::new(),
+                timestamp: 100,
+            },
+        ];
+
+        let results = executor.execute_select(&request, rows).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_query_executor_aggregate_group_by_empty() {
+        let mut schema = Schema::new();
+        schema.create_database("testdb".to_string()).unwrap();
+        schema.create_retention_policy("testdb", crate::schema::RetentionPolicy::new("rp1".to_string(), 86400)).unwrap();
+
+        let executor = QueryExecutor::new(schema);
+
+        let request = QueryRequest::new(
+            "testdb".to_string(),
+            "cpu".to_string(),
+            TimeRange { start: 0, end: 1000 },
+        )
+        .with_group_by(vec!["host".to_string()]);
+
+        let rows = vec![];
+        let results = executor.aggregate_group_by(&request, rows).unwrap();
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_query_executor_aggregate_group_by_no_group_by() {
+        let mut schema = Schema::new();
+        schema.create_database("testdb".to_string()).unwrap();
+        schema.create_retention_policy("testdb", crate::schema::RetentionPolicy::new("rp1".to_string(), 86400)).unwrap();
+
+        let executor = QueryExecutor::new(schema);
+
+        let request = QueryRequest::new(
+            "testdb".to_string(),
+            "cpu".to_string(),
+            TimeRange { start: 0, end: 1000 },
+        );
+
+        let rows = vec![
+            Row {
+                tags: std::collections::HashMap::new(),
+                fields: std::collections::HashMap::new(),
+                timestamp: 100,
+            },
+        ];
+
+        let results = executor.aggregate_group_by(&request, rows).unwrap();
+        assert_eq!(results.len(), 1);
+    }
+
+    #[test]
+    fn test_query_executor_with_schema() {
+        let schema = Schema::new();
+        let executor = QueryExecutor::with_schema(schema);
+        assert!(executor.schema.databases.is_empty());
+    }
+
+    #[test]
+    fn test_query_request_clone() {
+        let request = QueryRequest::new(
+            "testdb".to_string(),
+            "cpu".to_string(),
+            TimeRange { start: 0, end: 1000 },
+        )
+        .with_fields(vec!["field1".to_string()])
+        .with_limit(100);
+
+        let cloned = request.clone();
+        assert_eq!(cloned.database, request.database);
+        assert_eq!(cloned.measurement, request.measurement);
+        assert_eq!(cloned.selected_fields, request.selected_fields);
+        assert_eq!(cloned.limit, request.limit);
+    }
+
+    #[test]
+    fn test_query_executor_validate_query_with_db() {
+        let mut schema = Schema::new();
+        schema.create_database("testdb".to_string()).unwrap();
+        schema.create_retention_policy("testdb", crate::schema::RetentionPolicy::new("rp1".to_string(), 86400)).unwrap();
+
+        let executor = QueryExecutor::new(schema);
+
+        let request = QueryRequest::new(
+            "testdb".to_string(),
+            "cpu".to_string(),
+            TimeRange { start: 0, end: 1000 },
+        );
+
+        let result = executor.validate_query(&request);
+        assert!(result.is_ok());
     }
 }
