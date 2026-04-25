@@ -264,6 +264,45 @@ Query Request → Filter Optimization → Index Scan → TSSP Read → Result Me
   - 时间线索引
   - 标签索引
 
+### 7. Shard 模块
+- **职责**: 数据分片管理
+- **功能**:
+  - Shard 创建、查询、删除
+  - Shard 分割 (split)
+  - Shard 迁移 (migrate)
+  - 基于时间查找 Shard
+  - 虚拟节点映射 (consistent hashing)
+  - 集群统计信息
+
+### 8. Merge 模块
+- **职责**: 文件合并工具
+- **功能**:
+  - 合并候选文件选择
+  - 多文件合并执行
+  - 合并调度器管理
+
+### 9. Query 模块
+- **职责**: 查询执行和优化
+- **功能**:
+  - 查询验证
+  - 时间范围过滤
+  - GROUP BY 聚合
+  - LIMIT/OFFSET 处理
+
+### 10. Bloom Filter 模块
+- **职责**: 快速 Series 存在性判断
+- **功能**:
+  - 布隆过滤器创建
+  - 误报率计算
+  - 快速查询
+
+### 11. Cache 模块
+- **职责**: 查询结果缓存
+- **功能**:
+  - LRU 淘汰策略
+  - TTL 过期
+  - 缓存键生成
+
 ## 架构图
 
 ```mermaid
