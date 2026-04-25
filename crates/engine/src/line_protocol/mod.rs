@@ -508,10 +508,82 @@ mod tests {
             tags.insert("region".to_string(), "us-west".to_string());
             tags
         });
-        
+
         let result = parser.parse("cpu,host=server1 usage=50.0 1234567890").unwrap();
-        
+
         assert_eq!(result.tags.get("region").unwrap(), "us-west");
         assert_eq!(result.tags.get("host").unwrap(), "server1");
+    }
+
+    #[test]
+    fn test_value_from_str_integer() {
+        let val: Value = "42".parse().unwrap();
+        assert_eq!(val, Value::Integer(42));
+    }
+
+    #[test]
+    fn test_value_from_str_negative_integer() {
+        let val: Value = "-42".parse().unwrap();
+        assert_eq!(val, Value::Integer(-42));
+    }
+
+    #[test]
+    fn test_value_from_str_large_number() {
+        let val: Value = "18446744073709551615".parse().unwrap();
+        match val {
+            Value::Unsigned(n) => assert_eq!(n, 18446744073709551615u64),
+            _ => {}
+        }
+    }
+
+    #[test]
+    fn test_value_from_str_float() {
+        let val: Value = "3.14".parse().unwrap();
+        assert_eq!(val, Value::Float(3.14));
+    }
+
+    #[test]
+    fn test_value_from_str_boolean_true() {
+        let val: Value = "true".parse().unwrap();
+        assert_eq!(val, Value::Boolean(true));
+    }
+
+    #[test]
+    fn test_value_from_str_boolean_false() {
+        let val: Value = "false".parse().unwrap();
+        assert_eq!(val, Value::Boolean(false));
+    }
+
+    #[test]
+    fn test_value_from_str_quoted_string() {
+        let val: Value = "\"hello\"".parse().unwrap();
+        assert_eq!(val, Value::String("hello".to_string()));
+    }
+
+    #[test]
+    fn test_value_from_str_empty() {
+        let result: std::result::Result<Value, _> = "".parse();
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_line_protocol_parser_default() {
+        let parser = LineProtocolParser::new();
+        assert_eq!(parser.default_timestamp, 0);
+        assert!(parser.default_tags.is_empty());
+    }
+
+    #[test]
+    fn test_line_protocol_parser_with_default_timestamp() {
+        let parser = LineProtocolParser::new().with_default_timestamp(1000);
+        assert_eq!(parser.default_timestamp, 1000);
+    }
+
+    #[test]
+    fn test_parse_line_without_timestamp_uses_default() {
+        let parser = LineProtocolParser::new().with_default_timestamp(1000);
+        let result = parser.parse("cpu,host=server1 usage=50.0");
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap().timestamp, 1000);
     }
 }
