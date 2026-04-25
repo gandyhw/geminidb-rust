@@ -914,8 +914,8 @@ mod tests {
     fn test_cluster_node_lifecycle() {
         let cluster = RaftCluster::new();
 
-        let node1 = cluster.create_node(1, 5000, 1000);
-        let node2 = cluster.create_node(2, 5000, 1000);
+        let _node1 = cluster.create_node(1, 5000, 1000);
+        let _node2 = cluster.create_node(2, 5000, 1000);
 
         assert_eq!(cluster.node_count(), 2);
         assert!(cluster.get_node(1).is_some());

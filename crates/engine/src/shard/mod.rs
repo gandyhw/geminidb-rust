@@ -554,7 +554,7 @@ mod tests {
         let temp_dir = temp_dir();
         let manager = ShardManager::new(temp_dir.clone());
 
-        let shard = manager.create_shard(1, "testdb", "rp1").unwrap();
+        let _shard = manager.create_shard(1, "testdb", "rp1").unwrap();
         assert_eq!(manager.shard_count(), 1);
 
         let retrieved = manager.get_shard(1);
