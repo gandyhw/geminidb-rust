@@ -163,11 +163,11 @@ impl Engine {
         
         let tag_keys = self.measurement_tag_keys
             .entry(batch.table.clone())
-            .or_insert_with(std::collections::HashSet::new);
+            .or_default();
         
         let field_keys = self.measurement_field_keys
             .entry(batch.table.clone())
-            .or_insert_with(std::collections::HashSet::new);
+            .or_default();
         
         for row in &batch.rows {
             for key in row.tags.keys() {
@@ -474,7 +474,7 @@ impl Engine {
                 self.deleted_series.insert(id);
             }
             None => {
-                for (_, id) in &self.series_key_to_id {
+                for id in self.series_key_to_id.values() {
                     self.series_index.remove(*id);
                     self.deleted_series.insert(*id);
                 }
@@ -1054,21 +1054,16 @@ impl QueryResult {
             if let Some(v) = row.fields.get(field) {
                 match (&min_val, v) {
                     (None, _) => min_val = Some(v.clone()),
-                    (Some(FieldValue::Float(m)), FieldValue::Float(f)) => {
-                        if f.lt(m) { min_val = Some(v.clone()); }
-                    }
-                    (Some(FieldValue::Integer(m)), FieldValue::Integer(i)) => {
-                        if i.lt(m) { min_val = Some(v.clone()); }
-                    }
-                    (Some(FieldValue::Unsigned(m)), FieldValue::Unsigned(u)) => {
-                        if u.lt(m) { min_val = Some(v.clone()); }
-                    }
-                    (Some(FieldValue::Float(m)), FieldValue::Integer(i)) => {
-                        if (*i as f64).lt(m) { min_val = Some(v.clone()); }
-                    }
-                    (Some(FieldValue::Integer(m)), FieldValue::Float(f)) => {
-                        if f.lt(&(*m as f64)) { min_val = Some(v.clone()); }
-                    }
+                    (Some(FieldValue::Float(m)), FieldValue::Float(f))
+                        if f.lt(m) => { min_val = Some(v.clone()); }
+                    (Some(FieldValue::Integer(m)), FieldValue::Integer(i))
+                        if i.lt(m) => { min_val = Some(v.clone()); }
+                    (Some(FieldValue::Unsigned(m)), FieldValue::Unsigned(u))
+                        if u.lt(m) => { min_val = Some(v.clone()); }
+                    (Some(FieldValue::Float(m)), FieldValue::Integer(i))
+                        if (*i as f64).lt(m) => { min_val = Some(v.clone()); }
+                    (Some(FieldValue::Integer(m)), FieldValue::Float(f))
+                        if f.lt(&(*m as f64)) => { min_val = Some(v.clone()); }
                     _ => {}
                 }
             }
@@ -1084,21 +1079,16 @@ impl QueryResult {
             if let Some(v) = row.fields.get(field) {
                 match (&max_val, v) {
                     (None, _) => max_val = Some(v.clone()),
-                    (Some(FieldValue::Float(m)), FieldValue::Float(f)) => {
-                        if f.gt(m) { max_val = Some(v.clone()); }
-                    }
-                    (Some(FieldValue::Integer(m)), FieldValue::Integer(i)) => {
-                        if i.gt(m) { max_val = Some(v.clone()); }
-                    }
-                    (Some(FieldValue::Unsigned(m)), FieldValue::Unsigned(u)) => {
-                        if u.gt(m) { max_val = Some(v.clone()); }
-                    }
-                    (Some(FieldValue::Float(m)), FieldValue::Integer(i)) => {
-                        if (*i as f64).gt(m) { max_val = Some(v.clone()); }
-                    }
-                    (Some(FieldValue::Integer(m)), FieldValue::Float(f)) => {
-                        if f.gt(&(*m as f64)) { max_val = Some(v.clone()); }
-                    }
+                    (Some(FieldValue::Float(m)), FieldValue::Float(f))
+                        if f.gt(m) => { max_val = Some(v.clone()); }
+                    (Some(FieldValue::Integer(m)), FieldValue::Integer(i))
+                        if i.gt(m) => { max_val = Some(v.clone()); }
+                    (Some(FieldValue::Unsigned(m)), FieldValue::Unsigned(u))
+                        if u.gt(m) => { max_val = Some(v.clone()); }
+                    (Some(FieldValue::Float(m)), FieldValue::Integer(i))
+                        if (*i as f64).gt(m) => { max_val = Some(v.clone()); }
+                    (Some(FieldValue::Integer(m)), FieldValue::Float(f))
+                        if f.gt(&(*m as f64)) => { max_val = Some(v.clone()); }
                     _ => {}
                 }
             }

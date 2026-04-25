@@ -135,7 +135,7 @@ impl ShardManager {
             .join(retention_policy)
             .join(shard_id.to_string());
 
-        std::fs::create_dir_all(&shard_path).map_err(|e| Error::Io(e))?;
+        std::fs::create_dir_all(&shard_path).map_err(Error::Io)?;
 
         let info = ShardInfo::new(shard_id, database, retention_policy, shard_path);
         let arc = Arc::new(info);
@@ -386,7 +386,7 @@ impl ShardMapper {
     }
 
     pub fn map_shard(&self, timestamp: i64) -> u64 {
-        (timestamp / self.shard_duration_seconds as i64).unsigned_abs() as u64
+        (timestamp / self.shard_duration_seconds as i64).unsigned_abs()
     }
 
     pub fn get_shard_duration(&self) -> u64 {

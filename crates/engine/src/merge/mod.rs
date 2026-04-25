@@ -116,7 +116,7 @@ impl MergeTool {
 
         let mut i = 0;
         while i <= sorted_files.len() - 2 {
-            let batch_size = (max_files as usize).min(sorted_files.len() - i);
+            let batch_size = max_files.min(sorted_files.len() - i);
             let batch: Vec<FileMeta> = sorted_files[i..i + batch_size].to_vec();
             
             candidates.push(MergeCandidate::new(batch, self.config.data_dir.clone()));

@@ -363,20 +363,18 @@ fn decode_sample(data: &[u8]) -> std::result::Result<Sample, prost::DecodeError>
         
         match field_number {
             1 => {
-                if wire_type == 1 {
-                    if offset + 8 <= data.len() {
+                if wire_type == 1
+                    && offset + 8 <= data.len() {
                         value = f64::from_le_bytes(data[offset..offset + 8].try_into().unwrap());
                         offset += 8;
                     }
-                }
             }
             2 => {
-                if wire_type == 1 {
-                    if offset + 8 <= data.len() {
+                if wire_type == 1
+                    && offset + 8 <= data.len() {
                         timestamp = i64::from_le_bytes(data[offset..offset + 8].try_into().unwrap());
                         offset += 8;
                     }
-                }
             }
             _ => break,
         }
@@ -439,20 +437,18 @@ fn decode_query(data: &[u8]) -> std::result::Result<(i64, i64, Vec<Matcher>), pr
         
         match field_number {
             1 => {
-                if wire_type == 1 {
-                    if offset + 8 <= data.len() {
+                if wire_type == 1
+                    && offset + 8 <= data.len() {
                         start_timestamp_ms = i64::from_le_bytes(data[offset..offset + 8].try_into().unwrap());
                         offset += 8;
                     }
-                }
             }
             2 => {
-                if wire_type == 1 {
-                    if offset + 8 <= data.len() {
+                if wire_type == 1
+                    && offset + 8 <= data.len() {
                         end_timestamp_ms = i64::from_le_bytes(data[offset..offset + 8].try_into().unwrap());
                         offset += 8;
                     }
-                }
             }
             3 => {
                 if wire_type == 2 {

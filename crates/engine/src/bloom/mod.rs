@@ -14,7 +14,7 @@ impl BloomFilter {
         let num_bits = (-(expected_elements as f64) * false_positive_rate.ln() / (LN_2.powi(2))).ceil() as usize;
         let num_hashes = ((num_bits as f64 / expected_elements as f64) * LN_2).ceil() as usize;
         
-        let num_words = (num_bits + 63) / 64;
+        let num_words = num_bits.div_ceil(64);
         let bit_array = vec![0u64; num_words.max(1)];
         
         Self {

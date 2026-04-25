@@ -296,7 +296,7 @@ impl CompactionResult {
 
     pub fn space_saved(&self) -> i64 {
         let original_size: i64 = self.original_files.iter().map(|f| f.size as i64).sum();
-        let compacted_size = self.compacted_files.iter().map(|f| f.size as i64).sum::<i64>() as i64;
+        let compacted_size = self.compacted_files.iter().map(|f| f.size as i64).sum::<i64>();
         original_size - compacted_size
     }
 }

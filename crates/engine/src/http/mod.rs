@@ -308,7 +308,7 @@ fn handle_write(lines: &[&str], body: &[u8], engine: &Arc<RwLock<Option<Engine>>
     let lines_to_parse: Vec<&str> = if !body_str.is_empty() {
         body_str.lines().collect()
     } else {
-        lines.iter().skip(1).map(|s| *s).collect()
+        lines.iter().skip(1).copied().collect()
     };
 
     for (idx, line) in lines_to_parse.iter().enumerate() {
@@ -365,7 +365,7 @@ fn url_decode(s: &str) -> String {
                 if let Ok(byte) = u8::from_str_radix(&hex, 16) {
                     result.push(byte as char);
                 } else {
-                    result.push_str("%");
+                    result.push('%');
                     result.push_str(&hex);
                 }
             } else {
@@ -780,7 +780,7 @@ fn handle_prometheus_read(body: &[u8], engine: &Arc<RwLock<Option<Engine>>>) -> 
             buf.extend_from_slice(b"Connection: close\r\n");
             buf.extend_from_slice(b"\r\n");
             buf.extend_from_slice(&response);
-            return String::from_utf8_lossy(&buf).to_string();
+            String::from_utf8_lossy(&buf).to_string()
         }
         Err(e) => format_http_response(500, "Internal Server Error", &e.to_string()),
     }
@@ -995,7 +995,7 @@ fn format_results(measurement: &str, fields: &[crate::influxql::Field], result: 
                     if *name == "*" {
                         let first_row = result.rows.first();
                         if let Some(row) = first_row {
-                            for (_, v) in &row.fields {
+                            for v in row.fields.values() {
                                 row_values.push(field_value_to_string(v));
                             }
                         }
@@ -1056,7 +1056,7 @@ fn format_results(measurement: &str, fields: &[crate::influxql::Field], result: 
                 match field {
                     crate::influxql::Field::Raw(name) => {
                         if *name == "*" {
-                            for (_, v) in &row.fields {
+                            for v in row.fields.values() {
                                 row_values.push(field_value_to_string(v));
                             }
                         } else {

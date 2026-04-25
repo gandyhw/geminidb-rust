@@ -96,19 +96,12 @@ pub enum ConfigCommand {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct Membership {
     pub voters: Vec<u64>,
     pub learners: Vec<u64>,
 }
 
-impl Default for Membership {
-    fn default() -> Self {
-        Self {
-            voters: Vec::new(),
-            learners: Vec::new(),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeInfo {
@@ -284,15 +277,14 @@ impl RaftNode {
         
         let mut voted_for = self.voted_for.write().unwrap();
         
-        if voted_for.is_none() || *voted_for == Some(req.candidate_id) {
-            if req.last_log_index >= self.last_log_index() && req.last_log_term >= self.last_log_term() {
+        if (voted_for.is_none() || *voted_for == Some(req.candidate_id))
+            && req.last_log_index >= self.last_log_index() && req.last_log_term >= self.last_log_term() {
                 *voted_for = Some(req.candidate_id);
                 return VoteResult {
                     term: req.term,
                     vote_granted: true,
                 };
             }
-        }
         
         VoteResult {
             term: current_term,

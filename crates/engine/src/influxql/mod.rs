@@ -297,7 +297,7 @@ impl Parser {
         if word.to_uppercase() == "WHERE" {
             self.skip_whitespace();
             let cond_start = self.pos;
-            while let Some(_) = self.peek() {
+            while self.peek().is_some() {
                 self.pos += 1;
             }
             if cond_start < self.pos {
