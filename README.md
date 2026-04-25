@@ -4,7 +4,7 @@ A high-performance distributed time-series database written in Rust, inspired by
 
 ## Project Status
 
-**Overall Completion: ~96%**
+**Overall Completion: ~97%**
 
 | Category | Feature | Status | Completion |
 |----------|---------|--------|------------|
@@ -40,9 +40,9 @@ A high-performance distributed time-series database written in Rust, inspired by
 | **Compression** | Snappy/Zstd/LZ4 | Done | 95% |
 | **Binaries** | server binary | Done | 100% |
 | | client binary (testing) | Done | 100% |
-| **Testing** | Unit Tests | Done | 484 |
-| | Integration Tests | Done | 40+ |
-| | HTTP API Tests | Done | 15 |
+| **Testing** | Unit Tests | Done | 507 |
+| | Integration Tests | Done | 45+ |
+| | HTTP API Tests | Done | 17 |
 | | Benchmark Tests | Done | 34 |
 | | Stress Tests | Done | 2 |
 
@@ -100,7 +100,7 @@ influx -database=mydb -execute 'SHOW FIELD KEYS FROM cpu'
 - **GROUP BY time**: Time-based aggregation with configurable intervals
 - **InfluxQL Parser**: Full SQL-like query language with WHERE, ORDER BY, LIMIT
 - **HTTP API**: REST API compatible with InfluxDB CLI
-- **TDD Development**: Comprehensive unit tests with 484 tests passing
+- **TDD Development**: Comprehensive unit tests with 507 tests passing
 
 ## Architecture
 
@@ -293,9 +293,9 @@ cargo bench
 ### Build Status
 
 - **Build**: Successful
-- **Tests**: 484 passing
+- **Tests**: 507 passing
 - **Parser Tests (InfluxQL)**: 41 passing
-- **HTTP Integration Tests**: 15 passing
+- **HTTP Integration Tests**: 17 passing
 - **Benchmark Tests**: 34 functions
 - **Branch**: `260425-feat-enhance-compaction-shard`
 
