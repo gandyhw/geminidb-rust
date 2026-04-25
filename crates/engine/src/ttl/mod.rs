@@ -1,5 +1,7 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+type RowTuple = (i64, std::collections::HashMap<String, String>, std::collections::HashMap<String, crate::FieldValue>);
+
 #[derive(Debug, Clone)]
 pub struct TtlManager {
     default_ttl_seconds: u64,
@@ -54,7 +56,7 @@ impl TtlManager {
     pub fn filter_expired_rows(
         &self,
         table: &str,
-        rows: &mut Vec<(i64, std::collections::HashMap<String, String>, std::collections::HashMap<String, crate::FieldValue>)>,
+        rows: &mut Vec<RowTuple>,
         timestamps: &[i64],
     ) {
         let ttl = self.get_ttl_seconds(table);

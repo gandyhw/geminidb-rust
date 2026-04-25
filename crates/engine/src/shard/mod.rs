@@ -1,6 +1,6 @@
 use crate::error::{Error, Result};
 use std::collections::HashMap;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -405,7 +405,7 @@ impl ShardMapper {
         true
     }
 
-    pub fn get_shard_path(&self, data_dir: &PathBuf, database: &str, rp: &str, shard_id: u64) -> PathBuf {
+    pub fn get_shard_path(&self, data_dir: &Path, database: &str, rp: &str, shard_id: u64) -> PathBuf {
         data_dir.join(database).join(rp).join(shard_id.to_string())
     }
 

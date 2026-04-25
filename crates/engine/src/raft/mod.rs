@@ -317,10 +317,11 @@ impl RaftNode {
         let mut log = self.log.write().unwrap();
         
         if req.prev_log_index > 0 {
-            if (req.prev_log_index as usize) >= log.len() {
-                log.truncate(req.prev_log_index as usize);
-            } else if log[req.prev_log_index as usize].term != req.prev_log_term {
-                log.truncate(req.prev_log_index as usize);
+            let prev_idx = req.prev_log_index as usize;
+            let needs_truncate = prev_idx >= log.len()
+                || (prev_idx < log.len() && log[prev_idx].term != req.prev_log_term);
+            if needs_truncate {
+                log.truncate(prev_idx);
             }
         }
         

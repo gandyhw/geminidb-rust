@@ -346,9 +346,7 @@ fn handle_write(lines: &[&str], body: &[u8], engine: &Arc<RwLock<Option<Engine>>
         return format_http_response(400, "Bad Request", &format!("{{\"error\":\"{}\"}}", error_msg));
     }
 
-    if rows_written > 0 {
-        format_http_response(204, "No Content", "")
-    } else if parse_errors.is_empty() {
+    if rows_written > 0 || parse_errors.is_empty() {
         format_http_response(204, "No Content", "")
     } else {
         format_http_response(500, "Internal Server Error", &format!("{{\"written\":{}}}", rows_written))
@@ -1089,10 +1087,10 @@ fn format_results(measurement: &str, fields: &[crate::influxql::Field], result: 
     };
 
     format!(
-        "{{\"results\":[{{\"series\":[{{\"name\":\"{}\",\"columns\":{},\"values\":{}}}]}}]}}",
+        "{{\"results\":[{{\"series\":[{{\"name\":\"{}\",\"columns\":{},\"values\":[{}]}}]}}]}}",
         measurement,
         serde_json::to_string(&columns).unwrap(),
-        format!("[{}]", values.join(","))
+        values.join(",")
     )
 }
 
